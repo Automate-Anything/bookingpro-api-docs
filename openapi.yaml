@@ -1,0 +1,859 @@
+openapi: 3.1.0
+info:
+  title: Booking Pro API
+  version: "1.0.0"
+  description: >
+    The Booking Pro public API lets service businesses (salons, barbershops, spas,
+    wellness studios) read and manage their availability, catalog, contacts,
+    bookings, and stored value (gift cards, packages, memberships) programmatically.
+
+
+    All requests are authenticated with a per-tenant API key and scoped to a single
+    company. Every response is JSON. Monetary values are integers in **cents**.
+  contact:
+    name: Booking Pro Developer Support
+    url: https://developers.bookingpro.ai
+  license:
+    name: Proprietary
+servers:
+  - url: https://api.bookingpro.ai/api/v1
+    description: Production
+tags:
+  - name: General
+    description: Meta endpoints (auth check, health).
+  - name: Availability
+    description: Open time slots a customer could book.
+  - name: Catalog
+    description: The services and locations a company offers.
+  - name: Contacts
+    description: The customer records (CRM) for a company.
+  - name: Bookings
+    description: Appointments. Create, read, cancel, and reschedule.
+  - name: Gift Cards
+    description: Stored-value gift cards.
+  - name: Packages
+    description: Prepaid session/credit packs.
+  - name: Memberships
+    description: Recurring membership plans.
+  - name: Members
+    description: Resolve and check in members (kiosk, turnstile, biometric device).
+
+security:
+  - ApiKeyAuth: []
+
+paths:
+  /ping:
+    get:
+      operationId: ping
+      tags: [General]
+      summary: Verify a key
+      description: >
+        Returns the identity a key resolves to. Use it to confirm a key works and to
+        see which company, scopes, environment, and locations it is bound to.
+      responses:
+        "200":
+          description: The key is valid.
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  company_id: { type: string, format: uuid }
+                  environment: { type: string, enum: [live, test] }
+                  scopes:
+                    type: array
+                    items: { type: string }
+                  location_ids:
+                    type: array
+                    items: { type: string, format: uuid }
+                    description: The locations this key may act on. Empty means all company locations.
+                  request_id: { type: string }
+              example:
+                company_id: "3b1e...."
+                environment: live
+                scopes: ["read:catalog", "read:bookings", "write:bookings"]
+                location_ids: ["a1c2...."]
+                request_id: "req_9f2b7c"
+        "401": { $ref: "#/components/responses/Unauthorized" }
+
+  /availability:
+    get:
+      operationId: getAvailability
+      tags: [Availability]
+      summary: List open slots
+      description: >
+        Returns bookable start times for a service at a location on a given date (or
+        date range). Honors the location's business hours, staff schedules, existing
+        bookings, and booking rules, exactly like the public booking page.
+      parameters:
+        - name: location_id
+          in: query
+          required: true
+          schema: { type: string, format: uuid }
+        - name: service_id
+          in: query
+          required: true
+          schema: { type: string, format: uuid }
+        - name: date
+          in: query
+          required: true
+          description: Start date (YYYY-MM-DD), interpreted in the location's timezone.
+          schema: { type: string, format: date }
+        - name: days
+          in: query
+          required: false
+          description: Number of days from `date` to include (1-31). Defaults to 1.
+          schema: { type: integer, minimum: 1, maximum: 31, default: 1 }
+        - name: technician_id
+          in: query
+          required: false
+          description: Restrict to a specific staff member.
+          schema: { type: string, format: uuid }
+      responses:
+        "200":
+          description: Available slots.
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  location_id: { type: string, format: uuid }
+                  service_id: { type: string, format: uuid }
+                  slots:
+                    type: array
+                    items:
+                      type: object
+                      properties:
+                        start: { type: string, format: date-time }
+                        end: { type: string, format: date-time }
+                        technician_id: { type: string, format: uuid }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "403": { $ref: "#/components/responses/Forbidden" }
+        "422": { $ref: "#/components/responses/ValidationError" }
+
+  /services:
+    get:
+      operationId: listServices
+      tags: [Catalog]
+      summary: List services
+      description: The bookable services offered, scoped to the key's locations.
+      parameters:
+        - $ref: "#/components/parameters/LocationId"
+        - $ref: "#/components/parameters/Limit"
+        - $ref: "#/components/parameters/Cursor"
+      responses:
+        "200":
+          description: A page of services.
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  data:
+                    type: array
+                    items: { $ref: "#/components/schemas/Service" }
+                  next_cursor: { type: string, nullable: true }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+
+  /services/{id}:
+    get:
+      operationId: getService
+      tags: [Catalog]
+      summary: Retrieve a service
+      parameters:
+        - $ref: "#/components/parameters/PathId"
+      responses:
+        "200":
+          description: The service.
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Service" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "404": { $ref: "#/components/responses/NotFound" }
+
+  /locations:
+    get:
+      operationId: listLocations
+      tags: [Catalog]
+      summary: List locations
+      description: The locations this key may act on.
+      responses:
+        "200":
+          description: Locations.
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  data:
+                    type: array
+                    items: { $ref: "#/components/schemas/Location" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+
+  /contacts:
+    get:
+      operationId: listContacts
+      tags: [Contacts]
+      summary: List contacts
+      parameters:
+        - $ref: "#/components/parameters/LocationId"
+        - name: search
+          in: query
+          required: false
+          description: Fuzzy match on name, phone, or email.
+          schema: { type: string }
+        - $ref: "#/components/parameters/Limit"
+        - $ref: "#/components/parameters/Cursor"
+      responses:
+        "200":
+          description: A page of contacts.
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  data:
+                    type: array
+                    items: { $ref: "#/components/schemas/Contact" }
+                  next_cursor: { type: string, nullable: true }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+    post:
+      operationId: createContact
+      tags: [Contacts]
+      summary: Create a contact
+      description: >
+        Creates a customer record. Phone numbers are normalized to E.164. If a
+        contact with the same phone already exists at the location, the existing
+        record is returned (idempotent on phone) rather than duplicated.
+      parameters:
+        - $ref: "#/components/parameters/IdempotencyKey"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/ContactCreate" }
+      responses:
+        "201":
+          description: The created (or matched) contact.
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Contact" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "422": { $ref: "#/components/responses/ValidationError" }
+
+  /contacts/{id}:
+    get:
+      operationId: getContact
+      tags: [Contacts]
+      summary: Retrieve a contact
+      parameters:
+        - $ref: "#/components/parameters/PathId"
+      responses:
+        "200":
+          description: The contact.
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Contact" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "404": { $ref: "#/components/responses/NotFound" }
+    patch:
+      operationId: updateContact
+      tags: [Contacts]
+      summary: Update a contact
+      parameters:
+        - $ref: "#/components/parameters/PathId"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/ContactUpdate" }
+      responses:
+        "200":
+          description: The updated contact.
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Contact" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "404": { $ref: "#/components/responses/NotFound" }
+        "422": { $ref: "#/components/responses/ValidationError" }
+
+  /bookings:
+    get:
+      operationId: listBookings
+      tags: [Bookings]
+      summary: List bookings
+      parameters:
+        - $ref: "#/components/parameters/LocationId"
+        - name: from
+          in: query
+          description: Include bookings starting on/after this date-time.
+          schema: { type: string, format: date-time }
+        - name: to
+          in: query
+          description: Include bookings starting before this date-time.
+          schema: { type: string, format: date-time }
+        - name: contact_id
+          in: query
+          schema: { type: string, format: uuid }
+        - $ref: "#/components/parameters/Limit"
+        - $ref: "#/components/parameters/Cursor"
+      responses:
+        "200":
+          description: A page of bookings.
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  data:
+                    type: array
+                    items: { $ref: "#/components/schemas/Booking" }
+                  next_cursor: { type: string, nullable: true }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+    post:
+      operationId: createBooking
+      tags: [Bookings]
+      summary: Create a booking
+      description: >
+        Books an appointment. Enforces the location's booking rules and hard-blocks
+        any time conflict (staff or room), exactly like the public booking page. A
+        conflicting request returns `409`.
+      parameters:
+        - $ref: "#/components/parameters/IdempotencyKey"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/BookingCreate" }
+      responses:
+        "201":
+          description: The created booking.
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Booking" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "409": { $ref: "#/components/responses/Conflict" }
+        "422": { $ref: "#/components/responses/ValidationError" }
+
+  /bookings/{id}:
+    get:
+      operationId: getBooking
+      tags: [Bookings]
+      summary: Retrieve a booking
+      parameters:
+        - $ref: "#/components/parameters/PathId"
+      responses:
+        "200":
+          description: The booking.
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Booking" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "404": { $ref: "#/components/responses/NotFound" }
+
+  /bookings/{id}/cancel:
+    post:
+      operationId: cancelBooking
+      tags: [Bookings]
+      summary: Cancel a booking
+      parameters:
+        - $ref: "#/components/parameters/PathId"
+      requestBody:
+        required: false
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                reason: { type: string, description: Optional cancellation reason (stored on the booking). }
+      responses:
+        "200":
+          description: The cancelled booking.
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Booking" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "404": { $ref: "#/components/responses/NotFound" }
+
+  /bookings/{id}/reschedule:
+    post:
+      operationId: rescheduleBooking
+      tags: [Bookings]
+      summary: Reschedule a booking
+      description: Moves a booking to a new start time. Same conflict rules as create.
+      parameters:
+        - $ref: "#/components/parameters/PathId"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [start]
+              properties:
+                start: { type: string, format: date-time }
+                technician_id: { type: string, format: uuid }
+      responses:
+        "200":
+          description: The rescheduled booking.
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Booking" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "409": { $ref: "#/components/responses/Conflict" }
+        "422": { $ref: "#/components/responses/ValidationError" }
+
+  /gift-cards:
+    get:
+      operationId: listGiftCards
+      tags: [Gift Cards]
+      summary: List gift cards
+      parameters:
+        - $ref: "#/components/parameters/LocationId"
+        - $ref: "#/components/parameters/Limit"
+        - $ref: "#/components/parameters/Cursor"
+      responses:
+        "200":
+          description: A page of gift cards.
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  data:
+                    type: array
+                    items: { $ref: "#/components/schemas/GiftCard" }
+                  next_cursor: { type: string, nullable: true }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+
+  /gift-cards/{id}:
+    get:
+      operationId: getGiftCard
+      tags: [Gift Cards]
+      summary: Retrieve a gift card
+      parameters:
+        - $ref: "#/components/parameters/PathId"
+      responses:
+        "200":
+          description: The gift card.
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/GiftCard" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "404": { $ref: "#/components/responses/NotFound" }
+
+  /packages:
+    get:
+      operationId: listPackages
+      tags: [Packages]
+      summary: List package templates
+      parameters:
+        - $ref: "#/components/parameters/LocationId"
+      responses:
+        "200":
+          description: Package templates offered.
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  data:
+                    type: array
+                    items: { $ref: "#/components/schemas/Package" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+
+  /memberships:
+    get:
+      operationId: listMembershipPlans
+      tags: [Memberships]
+      summary: List membership plans
+      parameters:
+        - $ref: "#/components/parameters/LocationId"
+      responses:
+        "200":
+          description: Membership plans offered.
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  data:
+                    type: array
+                    items: { $ref: "#/components/schemas/MembershipPlan" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+
+  /contacts/{id}/memberships:
+    get:
+      operationId: listContactMemberships
+      tags: [Memberships]
+      summary: List a contact's memberships
+      description: The memberships a contact holds (as primary member or family member), with status and remaining credits.
+      parameters:
+        - $ref: "#/components/parameters/PathId"
+      responses:
+        "200":
+          description: The contact's memberships.
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  data:
+                    type: array
+                    items: { $ref: "#/components/schemas/ContactMembership" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "404": { $ref: "#/components/responses/NotFound" }
+
+  /members/resolve:
+    post:
+      operationId: resolveMember
+      tags: [Members]
+      summary: Resolve a member and check eligibility
+      description: >
+        Given a credential (a member code or an RFID fob/card UID) and a location,
+        returns the matching membership and whether the member is currently
+        eligible to check in. Use this from a kiosk, turnstile, or a biometric
+        device (map a face/fingerprint to the member's code, then call this) to
+        decide whether to let someone in, without recording a visit.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [identifier, location_id]
+              properties:
+                identifier: { type: string, description: The member's code or fob/card UID. }
+                location_id: { type: string, format: uuid }
+      responses:
+        "200":
+          description: Resolution result (found may be false).
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/MemberResolveResult" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "403": { $ref: "#/components/responses/Forbidden" }
+        "422": { $ref: "#/components/responses/ValidationError" }
+
+  /members/check-in:
+    post:
+      operationId: checkInMember
+      tags: [Members]
+      summary: Check a member in
+      description: >
+        Records a facility check-in for a member. Provide either an `identifier`
+        (member code or fob UID, which is resolved for you) or an explicit
+        `membership_id` + `contact_id`. Enforces the same rules as the dashboard:
+        membership active, plan allows facility access, the location is covered,
+        cross-location rules, and available credits. Send an `Idempotency-Key` so
+        a retry or a double-scan does not log two visits.
+      parameters:
+        - $ref: "#/components/parameters/IdempotencyKey"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [location_id]
+              properties:
+                location_id: { type: string, format: uuid }
+                identifier: { type: string, description: Member code or fob UID (resolve for me). }
+                membership_id: { type: string, format: uuid }
+                contact_id: { type: string, format: uuid }
+                method:
+                  type: string
+                  description: How the member was identified.
+                  enum: [code, fob, qr, phone, email, device]
+                  default: code
+      responses:
+        "201":
+          description: Checked in.
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  checked_in: { type: boolean }
+                  visit_id: { type: string, format: uuid, nullable: true }
+                  remaining_credits: { type: integer, nullable: true, description: Null for unlimited plans. }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "403": { $ref: "#/components/responses/Forbidden" }
+        "404": { $ref: "#/components/responses/NotFound" }
+        "422":
+          description: The check-in was denied (not eligible, no credits, wrong location, etc). The message says why.
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Error" }
+
+  /members/{id}/visits:
+    get:
+      operationId: listMemberVisits
+      tags: [Members]
+      summary: List a membership's check-ins
+      parameters:
+        - $ref: "#/components/parameters/PathId"
+        - $ref: "#/components/parameters/Limit"
+      responses:
+        "200":
+          description: Recent check-ins, newest first.
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  data:
+                    type: array
+                    items: { $ref: "#/components/schemas/MemberVisit" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "404": { $ref: "#/components/responses/NotFound" }
+
+components:
+  securitySchemes:
+    ApiKeyAuth:
+      type: http
+      scheme: bearer
+      description: >
+        Send your API key as a bearer token: `Authorization: Bearer bp_sk_live_...`.
+        Mint and revoke keys in your dashboard under Settings -> Developers.
+
+  parameters:
+    PathId:
+      name: id
+      in: path
+      required: true
+      schema: { type: string, format: uuid }
+    LocationId:
+      name: location_id
+      in: query
+      required: false
+      description: Restrict to a single location. Must be one the key can access.
+      schema: { type: string, format: uuid }
+    Limit:
+      name: limit
+      in: query
+      required: false
+      schema: { type: integer, minimum: 1, maximum: 100, default: 25 }
+    Cursor:
+      name: cursor
+      in: query
+      required: false
+      description: The `next_cursor` from a previous page.
+      schema: { type: string }
+    IdempotencyKey:
+      name: Idempotency-Key
+      in: header
+      required: false
+      description: >
+        A unique key you generate per logical create. Retrying with the same key
+        returns the original result instead of creating a duplicate.
+      schema: { type: string, maxLength: 255 }
+
+  responses:
+    Unauthorized:
+      description: Missing or invalid API key.
+      content:
+        application/json:
+          schema: { $ref: "#/components/schemas/Error" }
+          example:
+            error:
+              type: authentication
+              code: invalid_api_key
+              message: The API key provided is invalid or has been revoked.
+              request_id: req_9f2b7c
+    Forbidden:
+      description: The key lacks the scope, or the target is outside the key's locations.
+      content:
+        application/json:
+          schema: { $ref: "#/components/schemas/Error" }
+          example:
+            error:
+              type: permission
+              code: insufficient_scope
+              message: This key does not have the read:bookings scope.
+              request_id: req_9f2b7c
+    NotFound:
+      description: The resource does not exist (or is not in this company).
+      content:
+        application/json:
+          schema: { $ref: "#/components/schemas/Error" }
+    Conflict:
+      description: The requested time conflicts with an existing booking or block.
+      content:
+        application/json:
+          schema: { $ref: "#/components/schemas/Error" }
+          example:
+            error:
+              type: conflict
+              code: slot_unavailable
+              message: That time is no longer available.
+              request_id: req_9f2b7c
+    ValidationError:
+      description: The request body or query failed validation.
+      content:
+        application/json:
+          schema: { $ref: "#/components/schemas/Error" }
+          example:
+            error:
+              type: invalid_request
+              code: missing_field
+              message: first_name is required.
+              param: first_name
+              request_id: req_9f2b7c
+
+  schemas:
+    Error:
+      type: object
+      required: [error]
+      properties:
+        error:
+          type: object
+          required: [type, code, message]
+          properties:
+            type:
+              type: string
+              enum: [invalid_request, authentication, permission, rate_limit, not_found, conflict, server]
+            code: { type: string, description: A stable machine-readable code. }
+            message: { type: string, description: A human-readable explanation. }
+            param: { type: string, nullable: true, description: The offending field, when applicable. }
+            request_id: { type: string, description: Quote this when contacting support. }
+
+    Location:
+      type: object
+      properties:
+        id: { type: string, format: uuid }
+        name: { type: string }
+        slug: { type: string }
+        timezone: { type: string, example: "America/New_York" }
+        address: { type: string, nullable: true }
+
+    Service:
+      type: object
+      properties:
+        id: { type: string, format: uuid }
+        location_id: { type: string, format: uuid }
+        name: { type: string }
+        description: { type: string, nullable: true }
+        duration_minutes: { type: integer }
+        price_cents: { type: integer, description: Price in cents. }
+        category: { type: string, nullable: true }
+
+    Contact:
+      type: object
+      properties:
+        id: { type: string, format: uuid }
+        location_id: { type: string, format: uuid, nullable: true }
+        first_name: { type: string }
+        last_name: { type: string, nullable: true }
+        phone: { type: string, nullable: true, description: E.164. }
+        email: { type: string, nullable: true }
+        created_at: { type: string, format: date-time }
+
+    ContactCreate:
+      type: object
+      required: [first_name]
+      properties:
+        location_id: { type: string, format: uuid, description: Defaults to the key's location if it has exactly one. }
+        first_name: { type: string }
+        last_name: { type: string }
+        phone: { type: string, description: Any format; normalized to E.164. }
+        email: { type: string }
+
+    ContactUpdate:
+      type: object
+      properties:
+        first_name: { type: string }
+        last_name: { type: string }
+        phone: { type: string }
+        email: { type: string }
+
+    Booking:
+      type: object
+      properties:
+        id: { type: string, format: uuid }
+        location_id: { type: string, format: uuid }
+        contact_id: { type: string, format: uuid }
+        service_id: { type: string, format: uuid }
+        technician_id: { type: string, format: uuid, nullable: true }
+        start: { type: string, format: date-time }
+        end: { type: string, format: date-time }
+        status: { type: string, enum: [booked, confirmed, completed, cancelled, no_show] }
+        source: { type: string, example: api }
+        created_at: { type: string, format: date-time }
+
+    BookingCreate:
+      type: object
+      required: [location_id, service_id, start]
+      properties:
+        location_id: { type: string, format: uuid }
+        service_id: { type: string, format: uuid, description: "The service as listed for this location (GET /services with location_id). Every location owns its own service rows and prices; if you pass the same service's id from another location, it resolves to this location's row, or returns service_not_found when the service is not offered here." }
+        start: { type: string, format: date-time, description: Start time. Must be an available slot. }
+        technician_id: { type: string, format: uuid, description: Optional preferred staff member. }
+        contact_id: { type: string, format: uuid, description: An existing contact. Provide this OR `contact`. }
+        contact:
+          $ref: "#/components/schemas/ContactCreate"
+        notes: { type: string }
+
+    GiftCard:
+      type: object
+      properties:
+        id: { type: string, format: uuid }
+        location_id: { type: string, format: uuid }
+        code: { type: string }
+        initial_balance_cents: { type: integer }
+        current_balance_cents: { type: integer }
+        status: { type: string, enum: [active, redeemed, expired, void] }
+        created_at: { type: string, format: date-time }
+
+    Package:
+      type: object
+      properties:
+        id: { type: string, format: uuid }
+        location_id: { type: string, format: uuid }
+        name: { type: string }
+        price_cents: { type: integer }
+        total_sessions: { type: integer, nullable: true }
+
+    MembershipPlan:
+      type: object
+      properties:
+        id: { type: string, format: uuid }
+        location_id: { type: string, format: uuid }
+        name: { type: string }
+        price_cents: { type: integer }
+        billing_interval: { type: string, enum: [monthly, yearly] }
+
+    ContactMembership:
+      type: object
+      properties:
+        id: { type: string, format: uuid }
+        plan_id: { type: string, format: uuid }
+        status: { type: string, enum: [trialing, active, past_due, paused, cancelled] }
+        home_location_id: { type: string, format: uuid, nullable: true }
+        credits_remaining: { type: integer, nullable: true, description: Null for unlimited plans. }
+        period_credits_used: { type: integer }
+        current_period_end: { type: string, format: date-time, nullable: true }
+        next_renewal_date: { type: string, format: date, nullable: true }
+        member_code: { type: string, nullable: true, description: The scannable member code. }
+
+    MemberResolveResult:
+      type: object
+      properties:
+        found: { type: boolean }
+        membership_id: { type: string, format: uuid, nullable: true }
+        contact_id: { type: string, format: uuid, nullable: true }
+        resolved_by: { type: string, nullable: true, enum: [code, fob] }
+        valid_for_checkin: { type: boolean }
+        reason: { type: string, description: "eligible, or why not (e.g. no_credits_remaining, membership_not_active, location_not_covered)." }
+        plan_name: { type: string, nullable: true }
+        status: { type: string, nullable: true }
+
+    MemberVisit:
+      type: object
+      properties:
+        id: { type: string, format: uuid }
+        contact_id: { type: string, format: uuid }
+        location_id: { type: string, format: uuid }
+        check_in_method: { type: string }
+        checked_in_at: { type: string, format: date-time }
+        checked_out_at: { type: string, format: date-time, nullable: true }

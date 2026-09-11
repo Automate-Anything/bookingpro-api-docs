@@ -1,0 +1,19 @@
+Booking Pro API Specification and Documentation License
+
+Copyright (c) 2026 Automate Anything LLC. All rights reserved.
+
+The Booking Pro API specification (the OpenAPI document in this repository) and
+the accompanying documentation, guides, and Agent Skill (collectively, the
+"Materials") are published as a public reference. You may freely read, copy, and
+use the Materials to build, test, and operate integrations with the Booking Pro
+API, and to generate client libraries or tooling for that purpose.
+
+The Booking Pro name, the "Booking Pro" service, its underlying software, and
+the API service itself are proprietary to Automate Anything LLC. This license
+grants no right to use the Booking Pro name or branding except to identify
+compatibility with the Booking Pro API, and no right to the service or its
+implementation.
+
+THE MATERIALS ARE PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
+IMPLIED. Access to the live API is governed by your Booking Pro account
+agreement, not by this license.
