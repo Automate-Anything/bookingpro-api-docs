@@ -8,6 +8,8 @@ This repository is the canonical, public home of the Booking Pro API specificati
 
 - **Interactive reference and playground**: [developers.bookingpro.ai](https://developers.bookingpro.ai)
 - **In-app authenticated version**: available inside your account at [app.bookingpro.ai](https://app.bookingpro.ai) under Settings -> Developers.
+- **Product site**: [bookingpro.ai](https://bookingpro.ai)
+- **Sign in / sign up**: [app.bookingpro.ai](https://app.bookingpro.ai)
 
 ## Base URL
 
