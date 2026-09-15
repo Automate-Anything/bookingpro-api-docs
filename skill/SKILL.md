@@ -105,6 +105,11 @@ interactive playground at https://developers.bookingpro.ai.
 | POST | `/members/resolve` | Resolve a member and check eligibility |
 | POST | `/members/check-in` | Check a member in |
 | GET | `/members/{id}/visits` | List a membership's check-ins |
+| GET | `/classes` | List classes (the timetable) |
+| GET | `/classes/{id}` | Retrieve a class with its roster |
+| POST | `/classes/{id}/book` | Book a contact into a class |
+| POST | `/classes/{id}/cancel` | Cancel a contact's spot |
+| POST | `/classes/{id}/check-in` | Check a booked contact in |
 
 ## Common recipes
 

@@ -37,6 +37,8 @@ tags:
     description: Recurring membership plans.
   - name: Members
     description: Resolve and check in members (kiosk, turnstile, biometric device).
+  - name: Classes
+    description: Group classes (gyms and studios). The timetable, rosters, booking, cancelling and checking in.
 
 security:
   - ApiKeyAuth: []
@@ -608,6 +610,189 @@ paths:
         "401": { $ref: "#/components/responses/Unauthorized" }
         "404": { $ref: "#/components/responses/NotFound" }
 
+  /classes:
+    get:
+      operationId: listClasses
+      tags: [Classes]
+      summary: List classes (the timetable)
+      description: >
+        Group classes scheduled in a window (default: the next 7 days, at most 31).
+        Each row carries how many spots are booked and how many are left. Only
+        gyms and studios run classes; other businesses get an empty list.
+      parameters:
+        - $ref: "#/components/parameters/LocationId"
+        - name: from
+          in: query
+          schema: { type: string, format: date-time }
+          description: Window start (ISO 8601). Defaults to now.
+        - name: to
+          in: query
+          schema: { type: string, format: date-time }
+          description: Window end (ISO 8601). Defaults to from + 7 days; at most 31 days after from.
+        - name: service_id
+          in: query
+          schema: { type: string, format: uuid }
+          description: Only classes of this service.
+        - $ref: "#/components/parameters/Limit"
+        - $ref: "#/components/parameters/Cursor"
+      responses:
+        "200":
+          description: Classes in the window, earliest first.
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  data:
+                    type: array
+                    items: { $ref: "#/components/schemas/ClassSession" }
+                  next_cursor: { type: string, nullable: true }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "403": { $ref: "#/components/responses/Forbidden" }
+
+  /classes/{id}:
+    get:
+      operationId: getClass
+      tags: [Classes]
+      summary: Retrieve a class with its roster
+      parameters:
+        - $ref: "#/components/parameters/PathId"
+      responses:
+        "200":
+          description: The class, who is booked (with what covers each spot) and the waitlist.
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/ClassSessionDetail" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "404": { $ref: "#/components/responses/NotFound" }
+
+  /classes/{id}/book:
+    post:
+      operationId: bookClass
+      tags: [Classes]
+      summary: Book a contact into a class
+      description: >
+        Reserves a spot on the roster. Nothing is charged: the spot records what will
+        cover it at check-in (`membership`, `package`, `free_class`) or `none`. The
+        class rules apply: capacity (409 `class_full`), signup cutoff / max per day /
+        first-timers only (422 `booking_rule`), and, when the service requires a
+        membership or package, entitlement (422 `entitlement_required`) unless
+        `allow_without_entitlement` is true (a staff-style booking the desk charges
+        at checkout). Send an `Idempotency-Key`.
+      parameters:
+        - $ref: "#/components/parameters/PathId"
+        - $ref: "#/components/parameters/IdempotencyKey"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [contact_id]
+              properties:
+                contact_id: { type: string, format: uuid }
+                allow_without_entitlement: { type: boolean, default: false, description: Book even when no membership or package covers the class (charge at checkout). }
+      responses:
+        "201":
+          description: The spot.
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/ClassSpot" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "403": { $ref: "#/components/responses/Forbidden" }
+        "404": { $ref: "#/components/responses/NotFound" }
+        "409":
+          description: The class is full (`class_full`). Members can join the waitlist from the customer app.
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Error" }
+        "422":
+          description: A class rule refused the booking (`booking_rule`, message says which) or nothing covers it (`entitlement_required`).
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Error" }
+
+  /classes/{id}/cancel:
+    post:
+      operationId: cancelClassSpot
+      tags: [Classes]
+      summary: Cancel a contact's spot
+      description: >
+        Releases the contact's spot. Inside the location's cancellation window it is a
+        late cancel (`late: true`) that still consumes the covering credit unless
+        `excuse` is true. A freed spot is offered to the waitlist automatically.
+      parameters:
+        - $ref: "#/components/parameters/PathId"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [contact_id]
+              properties:
+                contact_id: { type: string, format: uuid }
+                reason: { type: string }
+                excuse: { type: boolean, default: false, description: Return the credit even on a late cancel. }
+      responses:
+        "200":
+          description: The released spot.
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  attendee_id: { type: string, format: uuid }
+                  class_id: { type: string, format: uuid }
+                  contact_id: { type: string, format: uuid }
+                  status: { type: string, enum: [cancelled, late_cancelled] }
+                  late: { type: boolean }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "404": { $ref: "#/components/responses/NotFound" }
+
+  /classes/{id}/check-in:
+    post:
+      operationId: checkInClassSpot
+      tags: [Classes]
+      summary: Check a booked contact in
+      description: >
+        Marks the contact's spot checked in and consumes what covers it (a membership
+        visit or a package credit). Honors the location's member check-in alert blocks
+        (422 `checkin_blocked` with `reasons`; a manager overrides at the desk). Send an
+        `Idempotency-Key`.
+      parameters:
+        - $ref: "#/components/parameters/PathId"
+        - $ref: "#/components/parameters/IdempotencyKey"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [contact_id]
+              properties:
+                contact_id: { type: string, format: uuid }
+      responses:
+        "201":
+          description: Checked in.
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  attendee_id: { type: string, format: uuid }
+                  class_id: { type: string, format: uuid }
+                  contact_id: { type: string, format: uuid }
+                  status: { type: string, enum: [checked_in] }
+                  paid_by: { type: string, nullable: true, enum: [membership, package, order, free_class, none] }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "404": { $ref: "#/components/responses/NotFound" }
+        "422":
+          description: The check-in was refused (`checkin_blocked` with `reasons`, or a rule such as a cancelled spot).
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Error" }
+
 components:
   securitySchemes:
     ApiKeyAuth:
@@ -616,6 +801,64 @@ components:
       description: >
         Send your API key as a bearer token: `Authorization: Bearer bp_sk_live_...`.
         Mint and revoke keys in your dashboard under Settings -> Developers.
+
+    ClassSession:
+      type: object
+      properties:
+        id: { type: string, format: uuid }
+        location_id: { type: string, format: uuid }
+        service_id: { type: string, format: uuid }
+        service_name: { type: string, nullable: true }
+        technician_id: { type: string, format: uuid, nullable: true }
+        technician_name: { type: string, nullable: true, description: The trainer / instructor. }
+        start: { type: string, format: date-time }
+        end: { type: string, format: date-time }
+        capacity: { type: integer, nullable: true, description: Null = unlimited. }
+        booked: { type: integer, description: Spots held (booked or checked in). }
+        spots_left: { type: integer, nullable: true }
+        waiting: { type: integer, description: People on the waitlist. }
+        status: { type: string, enum: [scheduled, cancelled, completed] }
+
+    ClassSessionDetail:
+      allOf:
+        - $ref: "#/components/schemas/ClassSession"
+        - type: object
+          properties:
+            roster:
+              type: array
+              items:
+                type: object
+                properties:
+                  attendee_id: { type: string, format: uuid }
+                  contact_id: { type: string, format: uuid }
+                  status: { type: string, enum: [reserved, registered, checked_in, no_show, late_cancelled, cancelled] }
+                  paid_by: { type: string, nullable: true, enum: [membership, package, order, free_class, none], description: What covers the spot (consumed at check-in). }
+                  source: { type: string, enum: [staff, portal, kiosk, series, waitlist, import] }
+                  booked_at: { type: string, format: date-time }
+                  checked_in_at: { type: string, format: date-time, nullable: true }
+                  cancelled_at: { type: string, format: date-time, nullable: true }
+                  guest_of_contact_id: { type: string, format: uuid, nullable: true }
+            waitlist:
+              type: array
+              items:
+                type: object
+                properties:
+                  waitlist_id: { type: string, format: uuid }
+                  contact_id: { type: string, format: uuid }
+                  status: { type: string, enum: [waiting, offered] }
+                  position: { type: integer }
+                  offer_expires_at: { type: string, format: date-time, nullable: true }
+
+    ClassSpot:
+      type: object
+      properties:
+        attendee_id: { type: string, format: uuid }
+        class_id: { type: string, format: uuid }
+        contact_id: { type: string, format: uuid }
+        status: { type: string, enum: [reserved, registered] }
+        paid_by: { type: string, nullable: true, enum: [membership, package, order, free_class, none] }
+        spots_left: { type: integer, nullable: true }
+        already_booked: { type: boolean, description: True when the contact already held this spot (no change made). }
 
   parameters:
     PathId:

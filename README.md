@@ -61,6 +61,8 @@ A request that needs a scope the key does not have returns `403 insufficient_sco
 | `read:memberships` | Read membership plans and what a customer holds |
 | `write:memberships` | Sell a membership to a contact |
 | `checkin:members` | Resolve and check in members (kiosk, turnstile, biometric device) |
+| `read:classes` | Read the class timetable and rosters (gyms and studios) |
+| `write:classes` | Book, cancel and check in class spots |
 
 ## Quickstart
 
@@ -131,6 +133,11 @@ Every endpoint in `v1`, derived from [`openapi.yaml`](./openapi.yaml):
 | POST | `/members/resolve` | Resolve a member (code, fob, or device) and check eligibility |
 | POST | `/members/check-in` | Check a member in (records a visit) |
 | GET | `/members/{id}/visits` | List a member's recent check-ins |
+| GET | `/classes` | List classes (the timetable) |
+| GET | `/classes/{id}` | Retrieve a class with its roster |
+| POST | `/classes/{id}/book` | Book a contact into a class |
+| POST | `/classes/{id}/cancel` | Cancel a contact's spot |
+| POST | `/classes/{id}/check-in` | Check a booked contact in |
 
 Each path is fully specified (parameters, request bodies, response schemas) in [`openapi.yaml`](./openapi.yaml), and rendered with an interactive playground at [developers.bookingpro.ai](https://developers.bookingpro.ai).
 
@@ -141,6 +148,7 @@ Readable directly on GitHub in the [`docs/`](./docs) folder:
 - [Quickstart](./docs/quickstart.md)
 - [Authentication](./docs/authentication.md)
 - [Members and check-in](./docs/members-and-check-in.md)
+- [Classes](./docs/classes.md)
 - [Errors](./docs/errors.md)
 - [Rate limits](./docs/rate-limits.md)
 - [Pagination](./docs/pagination.md)

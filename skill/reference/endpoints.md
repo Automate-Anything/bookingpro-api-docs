@@ -331,3 +331,78 @@ Success: `200`
 
 ---
 
+## GET /classes
+
+**List classes (the timetable).** Group classes scheduled in a window (default: the next 7 days, at most 31). Each row carries how many spots are booked and how many are left. Only gyms and studios run classes; other businesses get an empty list.
+
+Parameters:
+- `location_id` (query) - Restrict to a single location. Must be one the key can access.
+- `from` (query) - Window start (ISO 8601). Defaults to now.
+- `to` (query) - Window end (ISO 8601). Defaults to from + 7 days; at most 31 days after from.
+- `service_id` (query) - Only classes of this service.
+- `limit` (query)
+- `cursor` (query) - The `next_cursor` from a previous page.
+
+Success: `200`
+
+---
+
+## GET /classes/{id}
+
+**Retrieve a class with its roster.** 
+Parameters:
+- `id` (path) (required)
+
+Success: `200`
+
+---
+
+## POST /classes/{id}/book
+
+**Book a contact into a class.** Reserves a spot on the roster. Nothing is charged: the spot records what will cover it at check-in (`membership`, `package`, `free_class`) or `none`. The class rules apply: capacity (409 `class_full`), signup cutoff / max per day / first-timers only (422 `booking_rule`), and, when the service requires a membership or package, entitlement (422 `entitlement_required`) unless `allow_without_entitlement` is true (a staff-style booking the desk charges at checkout). Send an `Idempotency-Key`.
+
+Parameters:
+- `id` (path) (required)
+- `Idempotency-Key` (header) - A unique key you generate per logical create. Retrying with the same key returns the original result instead of creating a duplicate.
+
+
+Request body:
+  - `contact_id`: string (required)
+  - `allow_without_entitlement`: boolean - Book even when no membership or package covers the class (charge at checkout).
+
+Success: `201`
+
+---
+
+## POST /classes/{id}/cancel
+
+**Cancel a contact's spot.** Releases the contact's spot. Inside the location's cancellation window it is a late cancel (`late: true`) that still consumes the covering credit unless `excuse` is true. A freed spot is offered to the waitlist automatically.
+
+Parameters:
+- `id` (path) (required)
+
+Request body:
+  - `contact_id`: string (required)
+  - `reason`: string
+  - `excuse`: boolean - Return the credit even on a late cancel.
+
+Success: `200`
+
+---
+
+## POST /classes/{id}/check-in
+
+**Check a booked contact in.** Marks the contact's spot checked in and consumes what covers it (a membership visit or a package credit). Honors the location's member check-in alert blocks (422 `checkin_blocked` with `reasons`; a manager overrides at the desk). Send an `Idempotency-Key`.
+
+Parameters:
+- `id` (path) (required)
+- `Idempotency-Key` (header) - A unique key you generate per logical create. Retrying with the same key returns the original result instead of creating a duplicate.
+
+
+Request body:
+  - `contact_id`: string (required)
+
+Success: `201`
+
+---
+

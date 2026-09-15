@@ -2,6 +2,14 @@
 
 API changes, additions, and deprecations.
 
+## 2026-09: Classes (gyms and studios)
+
+- **Classes**: `GET /classes` (the timetable with booked / spots left), `GET /classes/{id}`
+  (roster with what covers each spot, plus the waitlist), `POST /classes/{id}/book`,
+  `POST /classes/{id}/cancel`, `POST /classes/{id}/check-in` (consumes the covering
+  membership visit or package credit; honors the member check-in alert blocks).
+- New scopes: `read:classes`, `write:classes`.
+
 ## 2026-09: Members and check-in
 
 - **Members**: `POST /members/resolve` (map a member code or fob UID to a member and
