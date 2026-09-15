@@ -802,64 +802,6 @@ components:
         Send your API key as a bearer token: `Authorization: Bearer bp_sk_live_...`.
         Mint and revoke keys in your dashboard under Settings -> Developers.
 
-    ClassSession:
-      type: object
-      properties:
-        id: { type: string, format: uuid }
-        location_id: { type: string, format: uuid }
-        service_id: { type: string, format: uuid }
-        service_name: { type: string, nullable: true }
-        technician_id: { type: string, format: uuid, nullable: true }
-        technician_name: { type: string, nullable: true, description: The trainer / instructor. }
-        start: { type: string, format: date-time }
-        end: { type: string, format: date-time }
-        capacity: { type: integer, nullable: true, description: Null = unlimited. }
-        booked: { type: integer, description: Spots held (booked or checked in). }
-        spots_left: { type: integer, nullable: true }
-        waiting: { type: integer, description: People on the waitlist. }
-        status: { type: string, enum: [scheduled, cancelled, completed] }
-
-    ClassSessionDetail:
-      allOf:
-        - $ref: "#/components/schemas/ClassSession"
-        - type: object
-          properties:
-            roster:
-              type: array
-              items:
-                type: object
-                properties:
-                  attendee_id: { type: string, format: uuid }
-                  contact_id: { type: string, format: uuid }
-                  status: { type: string, enum: [reserved, registered, checked_in, no_show, late_cancelled, cancelled] }
-                  paid_by: { type: string, nullable: true, enum: [membership, package, order, free_class, none], description: What covers the spot (consumed at check-in). }
-                  source: { type: string, enum: [staff, portal, kiosk, series, waitlist, import] }
-                  booked_at: { type: string, format: date-time }
-                  checked_in_at: { type: string, format: date-time, nullable: true }
-                  cancelled_at: { type: string, format: date-time, nullable: true }
-                  guest_of_contact_id: { type: string, format: uuid, nullable: true }
-            waitlist:
-              type: array
-              items:
-                type: object
-                properties:
-                  waitlist_id: { type: string, format: uuid }
-                  contact_id: { type: string, format: uuid }
-                  status: { type: string, enum: [waiting, offered] }
-                  position: { type: integer }
-                  offer_expires_at: { type: string, format: date-time, nullable: true }
-
-    ClassSpot:
-      type: object
-      properties:
-        attendee_id: { type: string, format: uuid }
-        class_id: { type: string, format: uuid }
-        contact_id: { type: string, format: uuid }
-        status: { type: string, enum: [reserved, registered] }
-        paid_by: { type: string, nullable: true, enum: [membership, package, order, free_class, none] }
-        spots_left: { type: integer, nullable: true }
-        already_booked: { type: boolean, description: True when the contact already held this spot (no change made). }
-
   parameters:
     PathId:
       name: id
@@ -945,6 +887,64 @@ components:
               request_id: req_9f2b7c
 
   schemas:
+    ClassSession:
+      type: object
+      properties:
+        id: { type: string, format: uuid }
+        location_id: { type: string, format: uuid }
+        service_id: { type: string, format: uuid }
+        service_name: { type: string, nullable: true }
+        technician_id: { type: string, format: uuid, nullable: true }
+        technician_name: { type: string, nullable: true, description: The trainer / instructor. }
+        start: { type: string, format: date-time }
+        end: { type: string, format: date-time }
+        capacity: { type: integer, nullable: true, description: Null = unlimited. }
+        booked: { type: integer, description: Spots held (booked or checked in). }
+        spots_left: { type: integer, nullable: true }
+        waiting: { type: integer, description: People on the waitlist. }
+        status: { type: string, enum: [scheduled, cancelled, completed] }
+
+    ClassSessionDetail:
+      allOf:
+        - $ref: "#/components/schemas/ClassSession"
+        - type: object
+          properties:
+            roster:
+              type: array
+              items:
+                type: object
+                properties:
+                  attendee_id: { type: string, format: uuid }
+                  contact_id: { type: string, format: uuid }
+                  status: { type: string, enum: [reserved, registered, checked_in, no_show, late_cancelled, cancelled] }
+                  paid_by: { type: string, nullable: true, enum: [membership, package, order, free_class, none], description: What covers the spot (consumed at check-in). }
+                  source: { type: string, enum: [staff, portal, kiosk, series, waitlist, import] }
+                  booked_at: { type: string, format: date-time }
+                  checked_in_at: { type: string, format: date-time, nullable: true }
+                  cancelled_at: { type: string, format: date-time, nullable: true }
+                  guest_of_contact_id: { type: string, format: uuid, nullable: true }
+            waitlist:
+              type: array
+              items:
+                type: object
+                properties:
+                  waitlist_id: { type: string, format: uuid }
+                  contact_id: { type: string, format: uuid }
+                  status: { type: string, enum: [waiting, offered] }
+                  position: { type: integer }
+                  offer_expires_at: { type: string, format: date-time, nullable: true }
+
+    ClassSpot:
+      type: object
+      properties:
+        attendee_id: { type: string, format: uuid }
+        class_id: { type: string, format: uuid }
+        contact_id: { type: string, format: uuid }
+        status: { type: string, enum: [reserved, registered] }
+        paid_by: { type: string, nullable: true, enum: [membership, package, order, free_class, none] }
+        spots_left: { type: integer, nullable: true }
+        already_booked: { type: boolean, description: True when the contact already held this spot (no change made). }
+
     Error:
       type: object
       required: [error]
