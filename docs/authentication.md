@@ -30,9 +30,12 @@ returns `403 insufficient_scope`. Grant only what an integration needs.
 | `write:bookings` | Create, cancel, reschedule bookings |
 | `read:giftcards` | Read gift cards |
 | `read:packages` | Read package templates |
-| `read:memberships` | Read membership plans and what a customer holds |
-| `write:memberships` | Sell a membership to a contact |
+| `read:memberships` | Read membership plans, what a customer holds, and a membership's check-ins |
 | `checkin:members` | Resolve and check in members (kiosk, turnstile, biometric device) |
+| `read:classes` | Read the class timetable and rosters |
+| `write:classes` | Book, cancel, and check contacts in to classes |
+| `read:webhooks` | List webhook endpoints and their delivery log |
+| `write:webhooks` | Register and delete webhook endpoints, rotate their signing secret |
 
 ## Locations
 
@@ -65,4 +68,4 @@ are issued.
 | `403 insufficient_scope` | Key lacks the required scope |
 | `403` (location) | Target is outside the key's locations |
 
-See [Errors](/docs/errors) for the full envelope.
+See [Errors](./errors.md) for the full envelope.

@@ -58,11 +58,12 @@ A request that needs a scope the key does not have returns `403 insufficient_sco
 | `write:bookings` | Create, cancel, reschedule bookings |
 | `read:giftcards` | Read gift cards |
 | `read:packages` | Read package templates |
-| `read:memberships` | Read membership plans and what a customer holds |
-| `write:memberships` | Sell a membership to a contact |
+| `read:memberships` | Read membership plans, what a customer holds, and a membership's check-ins |
 | `checkin:members` | Resolve and check in members (kiosk, turnstile, biometric device) |
 | `read:classes` | Read the class timetable and rosters (gyms and studios) |
 | `write:classes` | Book, cancel and check in class spots |
+| `read:webhooks` | List webhook endpoints and their delivery log |
+| `write:webhooks` | Register and delete webhook endpoints, rotate their signing secret |
 
 ## Quickstart
 
@@ -138,6 +139,12 @@ Every endpoint in `v1`, derived from [`openapi.yaml`](./openapi.yaml):
 | POST | `/classes/{id}/book` | Book a contact into a class |
 | POST | `/classes/{id}/cancel` | Cancel a contact's spot |
 | POST | `/classes/{id}/check-in` | Check a booked contact in |
+| GET | `/webhooks` | List webhook endpoints |
+| POST | `/webhooks` | Register a webhook endpoint |
+| GET | `/webhooks/{id}` | Get a webhook endpoint |
+| DELETE | `/webhooks/{id}` | Delete a webhook endpoint |
+| POST | `/webhooks/{id}/rotate-secret` | Rotate a webhook's signing secret |
+| GET | `/webhooks/{id}/deliveries` | List recent deliveries for a webhook |
 
 Each path is fully specified (parameters, request bodies, response schemas) in [`openapi.yaml`](./openapi.yaml), and rendered with an interactive playground at [developers.bookingpro.ai](https://developers.bookingpro.ai).
 

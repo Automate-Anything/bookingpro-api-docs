@@ -51,15 +51,30 @@ curl "https://api.bookingpro.ai/api/v1/services?location_id=a1c2...." \
 
 ## 4. Book an appointment
 
-Check availability, then create the booking. Send an `Idempotency-Key` so a retry
-never double-books:
+Check availability, then book one of the slots it returned. Send an
+`Idempotency-Key` so a retry never double-books:
 
 ```bash
 # find open slots
 curl "https://api.bookingpro.ai/api/v1/availability?location_id=a1c2....&service_id=svc_....&date=2026-09-10" \
   -H "Authorization: Bearer bp_sk_live_..."
+```
 
-# book one
+```json
+{
+  "location_id": "a1c2....",
+  "service_id": "svc_....",
+  "slots": [
+    { "start": "2026-09-10T14:00:00.000Z", "end": "2026-09-10T15:00:00.000Z", "technician_id": "t9d4...." }
+  ]
+}
+```
+
+Each slot names the staff member who is free then. Book the slot with that
+`technician_id` (or leave `technician_id` out and the first free staff member is
+assigned, the same person the slot named):
+
+```bash
 curl -X POST https://api.bookingpro.ai/api/v1/bookings \
   -H "Authorization: Bearer bp_sk_live_..." \
   -H "Idempotency-Key: 8f1c-quickstart-1" \
@@ -67,11 +82,14 @@ curl -X POST https://api.bookingpro.ai/api/v1/bookings \
   -d '{
     "location_id": "a1c2....",
     "service_id": "svc_....",
-    "start": "2026-09-10T14:00:00Z",
+    "technician_id": "t9d4....",
+    "start": "2026-09-10T14:00:00.000Z",
     "contact": { "first_name": "Jordan", "phone": "+15551234567" }
   }'
 ```
 
-That is the whole loop. Explore every endpoint in the interactive
-[API reference](https://developers.bookingpro.ai/docs/api-reference/general/ping),
-which has a playground.
+If someone takes the time in between, you get `409 slot_unavailable`: fetch
+availability again and pick another slot.
+
+That is the whole loop. Explore every endpoint in the
+[API reference](https://developers.bookingpro.ai/docs/api-reference/general/ping), which has an interactive playground.

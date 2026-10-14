@@ -63,12 +63,14 @@ the account owner to mint a key with exactly the scopes your integration needs.
 | Gift Cards | `read:giftcards` |
 | Packages | `read:packages` |
 | Memberships | `read:memberships` |
-| Members | `checkin:members` |
+| Members | `checkin:members (resolve/check-in), read:memberships (visit history)` |
+| Classes | `read:classes (read), write:classes (book/cancel/check-in)` |
+| Webhooks | `read:webhooks (read), write:webhooks (create/delete/rotate secret)` |
 
 ## Conventions
 
 - Base URL: `https://api.bookingpro.ai/api/v1`
-- All money is integer **cents** (e.g. `price_cents: 5000` is $50.00).
+- All money is integer **cents** of the object's `currency` field (e.g. `price_cents: 5000` with `currency: "USD"` is $50.00; with `"MXN"` it is MX$50.00). Each location has its own `currency` and customer language `default_language` (`GET /locations`); never assume USD.
 - All timestamps are ISO 8601 UTC.
 - Responses are JSON. Errors use one envelope: `{ "error": { "type", "code", "message", "param?", "request_id" } }`. Branch on `type`, switch on `code`, quote `request_id` to support.
 - Paginated list endpoints return `{ data: [...], next_cursor }`. Pass the `next_cursor` back as `?cursor=` for the next page; `null` means the end.
@@ -110,14 +112,27 @@ interactive playground at https://developers.bookingpro.ai.
 | POST | `/classes/{id}/book` | Book a contact into a class |
 | POST | `/classes/{id}/cancel` | Cancel a contact's spot |
 | POST | `/classes/{id}/check-in` | Check a booked contact in |
+| GET | `/webhooks` | List webhook endpoints |
+| POST | `/webhooks` | Register a webhook endpoint |
+| GET | `/webhooks/{id}` | Get a webhook endpoint |
+| DELETE | `/webhooks/{id}` | Delete a webhook endpoint |
+| POST | `/webhooks/{id}/rotate-secret` | Rotate a webhook's signing secret |
+| GET | `/webhooks/{id}/deliveries` | List recent deliveries for a webhook |
 
 ## Common recipes
 
 ### Check availability then book
-1. `GET /availability?location_id=...&service_id=...&date=2026-09-10` -> pick a `slots[].start`.
-2. `POST /bookings` with `{ location_id, service_id, start, contact: { first_name, phone } }`
-   (or an existing `contact_id`). Send an `Idempotency-Key`.
-3. A `409` means the slot was taken between steps 1 and 2 - re-fetch availability.
+1. `GET /availability?location_id=...&service_id=...&date=2026-09-10` -> pick a slot. Each slot
+   has a `start` and the `technician_id` of the staff member free then (null at a location
+   that books onto rooms). Without `technician_id` in the query you get "any available"
+   (at most 7 days per request).
+2. `POST /bookings` with `{ location_id, service_id, start, technician_id, contact: { first_name, phone } }`
+   (or an existing `contact_id`), using the slot's `start` and `technician_id`. Leaving
+   `technician_id` out assigns the first free staff member (the same one the slot named).
+   Send an `Idempotency-Key`.
+3. A `409 slot_unavailable` means the slot was taken between steps 1 and 2: re-fetch availability.
+4. A booking's `status` is one of booked, confirmed, checked_in, completed, cancelled, no_show,
+   passed (the business's own label is `status_name`).
 
 ### Create a contact
 `POST /contacts` with `{ first_name, phone }`. Phone is normalized to E.164 and

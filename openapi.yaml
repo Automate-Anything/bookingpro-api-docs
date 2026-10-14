@@ -9,7 +9,10 @@ info:
 
 
     All requests are authenticated with a per-tenant API key and scoped to a single
-    company. Every response is JSON. Monetary values are integers in **cents**.
+    company. Every response is JSON. Monetary values are integers in **cents**
+    (minor units) of the currency named by the object's `currency` field (uppercase
+    ISO 4217). Each location has its own currency (`GET /locations`), so never
+    assume USD.
   contact:
     name: Booking Pro Developer Support
     url: https://developers.bookingpro.ai
@@ -39,6 +42,8 @@ tags:
     description: Resolve and check in members (kiosk, turnstile, biometric device).
   - name: Classes
     description: Group classes (gyms and studios). The timetable, rosters, booking, cancelling and checking in.
+  - name: Webhooks
+    description: Outbound event subscriptions. Register an https URL and receive signed booking, payment and contact events.
 
 security:
   - ApiKeyAuth: []
@@ -86,7 +91,22 @@ paths:
       description: >
         Returns bookable start times for a service at a location on a given date (or
         date range). Honors the location's business hours, staff schedules, existing
-        bookings, and booking rules, exactly like the public booking page.
+        bookings, classes, rooms, and booking rules, exactly like the public booking
+        page. Each slot is sized for the staff member who would do it (their own
+        duration, waiting period and cleanup time for the service).
+
+
+        Without `technician_id`: at a location where every appointment needs a staff
+        member, this is "any available": a time is listed when ANY staff member who
+        performs the service is free, and the slot's `technician_id` is the staff
+        member `POST /bookings` assigns when you book that start without naming one
+        (the first free one in the location's booking priority order). At most 7 days
+        per request in this mode. At a location that books appointments onto rooms,
+        the slots come from the rooms and `technician_id` is null.
+
+
+        Every `start` returned here is accepted by `POST /bookings` (unless someone
+        books it first, which returns `409`).
       parameters:
         - name: location_id
           in: query
@@ -109,7 +129,7 @@ paths:
         - name: technician_id
           in: query
           required: false
-          description: Restrict to a specific staff member.
+          description: Restrict to a specific staff member. Must be someone who performs the service at the location (otherwise `404 technician_not_found`).
           schema: { type: string, format: uuid }
       responses:
         "200":
@@ -127,25 +147,34 @@ paths:
                       type: object
                       properties:
                         start: { type: string, format: date-time }
-                        end: { type: string, format: date-time }
-                        technician_id: { type: string, format: uuid }
+                        end: { type: string, format: date-time, description: "When the appointment would end: `start` plus the whole visit with this slot's staff member (their duration for the service, including any waiting period inside it)." }
+                        technician_id: { type: string, format: uuid, nullable: true, description: "The staff member this slot is with: the one you asked for, the one `POST /bookings` assigns in any-available mode, or null at a location that books onto rooms." }
         "401": { $ref: "#/components/responses/Unauthorized" }
         "403": { $ref: "#/components/responses/Forbidden" }
+        "404":
+          description: The location, the service (`service_not_found`, also when it is not offered at the location), or the staff member (`technician_not_found`) does not exist.
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Error" }
         "422": { $ref: "#/components/responses/ValidationError" }
+        "503": { $ref: "#/components/responses/ServiceUnavailable" }
 
   /services:
     get:
       operationId: listServices
       tags: [Catalog]
       summary: List services
-      description: The bookable services offered, scoped to the key's locations.
+      description: >
+        The bookable services offered, scoped to the key's locations: every active
+        service assigned to each location and open for online booking, with that
+        location's price and duration. Each location lists its own rows (the same
+        service at two locations is two rows with two ids). The list is complete in
+        one response (not paginated).
       parameters:
         - $ref: "#/components/parameters/LocationId"
-        - $ref: "#/components/parameters/Limit"
-        - $ref: "#/components/parameters/Cursor"
       responses:
         "200":
-          description: A page of services.
+          description: The services.
           content:
             application/json:
               schema:
@@ -154,14 +183,15 @@ paths:
                   data:
                     type: array
                     items: { $ref: "#/components/schemas/Service" }
-                  next_cursor: { type: string, nullable: true }
         "401": { $ref: "#/components/responses/Unauthorized" }
+        "503": { $ref: "#/components/responses/ServiceUnavailable" }
 
   /services/{id}:
     get:
       operationId: getService
       tags: [Catalog]
       summary: Retrieve a service
+      description: The same object `GET /services` returns. A service that list hides (deleted, inactive, not offered at its location, or closed to online booking) is a `404`.
       parameters:
         - $ref: "#/components/parameters/PathId"
       responses:
@@ -172,6 +202,7 @@ paths:
               schema: { $ref: "#/components/schemas/Service" }
         "401": { $ref: "#/components/responses/Unauthorized" }
         "404": { $ref: "#/components/responses/NotFound" }
+        "422": { $ref: "#/components/responses/ValidationError" }
 
   /locations:
     get:
@@ -197,12 +228,12 @@ paths:
       operationId: listContacts
       tags: [Contacts]
       summary: List contacts
+      description: Contacts are shared by every location of the company.
       parameters:
-        - $ref: "#/components/parameters/LocationId"
         - name: search
           in: query
           required: false
-          description: Fuzzy match on name, phone, or email.
+          description: Fuzzy match on name, phone, or email. A name also matches when written with or without accents ("jose" finds "José"); those contacts are listed after the exact-spelling matches.
           schema: { type: string }
         - $ref: "#/components/parameters/Limit"
         - $ref: "#/components/parameters/Cursor"
@@ -317,9 +348,21 @@ paths:
       tags: [Bookings]
       summary: Create a booking
       description: >
-        Books an appointment. Enforces the location's booking rules and hard-blocks
-        any time conflict (staff or room), exactly like the public booking page. A
-        conflicting request returns `409`.
+        Books an appointment. The start is re-checked exactly the way the public
+        booking page re-checks it: the staff member's working hours, the location's
+        hours, existing bookings, classes, rooms, and the location's booking rules
+        (same day, how far ahead, minimum notice). The visit is sized for the staff
+        member doing it (their own duration, waiting period and cleanup time for the
+        service). A taken or closed time returns `409 slot_unavailable`; a broken
+        booking rule returns `422 booking_rule_violation`.
+
+
+        Without `technician_id`, at a location where every appointment needs a staff
+        member, the first free staff member who performs the service (in the
+        location's booking priority order) is assigned: the same person
+        `GET /availability` named for that slot. At a location that books onto
+        rooms, the appointment is booked onto a room with no staff member (the
+        service must have a room there, else `422 service_not_bookable`).
       parameters:
         - $ref: "#/components/parameters/IdempotencyKey"
       requestBody:
@@ -334,8 +377,10 @@ paths:
             application/json:
               schema: { $ref: "#/components/schemas/Booking" }
         "401": { $ref: "#/components/responses/Unauthorized" }
+        "403": { $ref: "#/components/responses/Forbidden" }
         "409": { $ref: "#/components/responses/Conflict" }
         "422": { $ref: "#/components/responses/ValidationError" }
+        "503": { $ref: "#/components/responses/ServiceUnavailable" }
 
   /bookings/{id}:
     get:
@@ -358,6 +403,12 @@ paths:
       operationId: cancelBooking
       tags: [Bookings]
       summary: Cancel a booking
+      description: >
+        Cancels the appointment the same way the dashboard does: it gets the
+        business's Cancelled status, the customer and staff are notified, the
+        calendar event is removed, and automations and webhooks
+        (`booking.cancelled`) fire. Cancelling a booking that is already cancelled
+        changes nothing and returns it.
       parameters:
         - $ref: "#/components/parameters/PathId"
       requestBody:
@@ -376,13 +427,21 @@ paths:
               schema: { $ref: "#/components/schemas/Booking" }
         "401": { $ref: "#/components/responses/Unauthorized" }
         "404": { $ref: "#/components/responses/NotFound" }
+        "422": { $ref: "#/components/responses/ValidationError" }
 
   /bookings/{id}/reschedule:
     post:
       operationId: rescheduleBooking
       tags: [Bookings]
       summary: Reschedule a booking
-      description: Moves a booking to a new start time. Same conflict rules as create.
+      description: >
+        Moves a booking to a new start time (and optionally to another staff
+        member). The new start is re-checked exactly like create: working and
+        location hours, existing bookings, classes, rooms, and the booking rules.
+        When `technician_id` names a different staff member, the visit is re-sized
+        for that person (their own duration, waiting period and cleanup time for
+        each service); each service keeps its quantity, price and room. A cancelled
+        booking cannot be rescheduled (`409 booking_cancelled`); create a new one.
       parameters:
         - $ref: "#/components/parameters/PathId"
       requestBody:
@@ -393,8 +452,8 @@ paths:
               type: object
               required: [start]
               properties:
-                start: { type: string, format: date-time }
-                technician_id: { type: string, format: uuid }
+                start: { type: string, format: date-time, description: The new start. Use a start from `GET /availability`. }
+                technician_id: { type: string, format: uuid, description: Move the booking to this staff member (must perform its services at the location). Omit to keep the current one. }
       responses:
         "200":
           description: The rescheduled booking.
@@ -402,8 +461,10 @@ paths:
             application/json:
               schema: { $ref: "#/components/schemas/Booking" }
         "401": { $ref: "#/components/responses/Unauthorized" }
+        "404": { $ref: "#/components/responses/NotFound" }
         "409": { $ref: "#/components/responses/Conflict" }
         "422": { $ref: "#/components/responses/ValidationError" }
+        "503": { $ref: "#/components/responses/ServiceUnavailable" }
 
   /gift-cards:
     get:
@@ -793,6 +854,147 @@ paths:
             application/json:
               schema: { $ref: "#/components/schemas/Error" }
 
+  /webhooks:
+    get:
+      operationId: listWebhooks
+      tags: [Webhooks]
+      summary: List webhook endpoints
+      description: >
+        Returns the webhook endpoints registered for your account. The signing
+        secret is never returned here; it is shown only once, when the endpoint is
+        created (or its secret rotated).
+      responses:
+        "200":
+          description: Your webhook endpoints.
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  data: { type: array, items: { $ref: "#/components/schemas/WebhookEndpoint" } }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "403": { $ref: "#/components/responses/Forbidden" }
+    post:
+      operationId: createWebhook
+      tags: [Webhooks]
+      summary: Register a webhook endpoint
+      description: >
+        Register an https URL to receive events. Booking Pro POSTs a JSON body for
+        each subscribed event, signed with HMAC-SHA256 in the
+        `X-BookingPro-Signature` header (`sha256=<hex>`) using the `secret`
+        returned here. Verify every delivery by recomputing the HMAC of the raw
+        request body with that secret. Each delivery also carries a unique
+        `X-BookingPro-Event-Id` you can use to deduplicate. The `secret` is shown
+        ONLY in this response. Subscribe to specific event types, or `"*"` for all.
+        Send an `Idempotency-Key` so a retried create does not register twice.
+        The body of every delivery is a `WebhookEvent`; payment events carry
+        `amount_cents`, `tip_cents` and their `currency` (uppercase ISO 4217).
+      parameters:
+        - $ref: "#/components/parameters/IdempotencyKey"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [url, event_types]
+              properties:
+                url: { type: string, format: uri, description: An https:// URL that will receive POSTed events. }
+                event_types:
+                  type: array
+                  description: 'Events to receive, or ["*"] for all.'
+                  items:
+                    type: string
+                    enum: [booking.created, booking.cancelled, booking.rescheduled, booking.completed, booking.no_show, booking.checked_in, booking.confirmed, payment.received, payment.refunded, contact.created, "*"]
+                description: { type: string, nullable: true }
+      responses:
+        "201":
+          description: The created endpoint, including the one-time signing secret.
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/WebhookEndpointWithSecret" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "403": { $ref: "#/components/responses/Forbidden" }
+        "422": { $ref: "#/components/responses/ValidationError" }
+
+  /webhooks/{id}:
+    get:
+      operationId: getWebhook
+      tags: [Webhooks]
+      summary: Get a webhook endpoint
+      parameters:
+        - { name: id, in: path, required: true, schema: { type: string, format: uuid } }
+      responses:
+        "200":
+          description: The endpoint.
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/WebhookEndpoint" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "404": { $ref: "#/components/responses/NotFound" }
+    delete:
+      operationId: deleteWebhook
+      tags: [Webhooks]
+      summary: Delete a webhook endpoint
+      description: Permanently removes the endpoint. Pending deliveries to it are dropped.
+      parameters:
+        - { name: id, in: path, required: true, schema: { type: string, format: uuid } }
+      responses:
+        "200":
+          description: Deleted.
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  deleted: { type: boolean }
+                  id: { type: string, format: uuid }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "404": { $ref: "#/components/responses/NotFound" }
+
+  /webhooks/{id}/rotate-secret:
+    post:
+      operationId: rotateWebhookSecret
+      tags: [Webhooks]
+      summary: Rotate a webhook's signing secret
+      description: >
+        Generates a new signing secret and returns it ONCE. Update your receiver to
+        verify with the new secret. The old secret stops working immediately.
+      parameters:
+        - { name: id, in: path, required: true, schema: { type: string, format: uuid } }
+      responses:
+        "200":
+          description: The endpoint with its new one-time secret.
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/WebhookEndpointWithSecret" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "404": { $ref: "#/components/responses/NotFound" }
+
+  /webhooks/{id}/deliveries:
+    get:
+      operationId: listWebhookDeliveries
+      tags: [Webhooks]
+      summary: List recent deliveries for a webhook
+      description: >
+        The delivery log for an endpoint: one row per event sent to it, with the
+        delivery status, attempt count, last HTTP response status, and any error.
+        Use it to debug a receiver that is not acknowledging events.
+      parameters:
+        - { name: id, in: path, required: true, schema: { type: string, format: uuid } }
+        - { name: limit, in: query, required: false, schema: { type: integer, default: 50, maximum: 100 } }
+      responses:
+        "200":
+          description: Recent deliveries, newest first.
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  data: { type: array, items: { $ref: "#/components/schemas/WebhookDelivery" } }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "404": { $ref: "#/components/responses/NotFound" }
+
 components:
   securitySchemes:
     ApiKeyAuth:
@@ -873,8 +1075,21 @@ components:
               code: slot_unavailable
               message: That time is no longer available.
               request_id: req_9f2b7c
+    ServiceUnavailable:
+      description: >
+        A temporary failure reading the schedule or catalog. Nothing is wrong with
+        the request; retry shortly (with the same `Idempotency-Key` for a create).
+      content:
+        application/json:
+          schema: { $ref: "#/components/schemas/Error" }
+          example:
+            error:
+              type: server
+              code: availability_unavailable
+              message: Availability could not be loaded right now. Nothing is wrong with your request; please retry shortly.
+              request_id: req_9f2b7c
     ValidationError:
-      description: The request body or query failed validation.
+      description: The request body or query failed validation (including an id that is not a UUID, `invalid_id` / `invalid_field`).
       content:
         application/json:
           schema: { $ref: "#/components/schemas/Error" }
@@ -966,9 +1181,11 @@ components:
       properties:
         id: { type: string, format: uuid }
         name: { type: string }
-        slug: { type: string }
         timezone: { type: string, example: "America/New_York" }
         address: { type: string, nullable: true }
+        phone: { type: string, nullable: true, description: The location phone number shown to customers. }
+        currency: { type: string, example: "USD", description: "Uppercase ISO 4217 code of the currency this location sells in. Every price and balance at this location (services, packages, membership plans, gift cards) is in minor units of it. Supported: USD, MXN, JMD, TTD, BBD, BSD, KYD, DOP, AWG, XCG." }
+        default_language: { type: string, enum: [en, es], example: "en", description: "The language this location messages its customers in when a contact has no language of their own (en = English, es = Spanish)." }
 
     Service:
       type: object
@@ -977,15 +1194,17 @@ components:
         location_id: { type: string, format: uuid }
         name: { type: string }
         description: { type: string, nullable: true }
-        duration_minutes: { type: integer }
-        price_cents: { type: integer, description: Price in cents. }
-        category: { type: string, nullable: true }
+        duration_minutes: { type: integer, description: "Full length of the appointment in minutes, from the start until the customer is done. For a service with a waiting period in the middle (for example hair color, where the product sets before the staff member returns), this includes the wait and the time after it: the work before the wait is `duration_minutes - wait_minutes - finish_minutes`. It does not include cleanup time after the customer leaves. A staff member can have their own length for a service; availability and bookings use theirs." }
+        wait_minutes: { type: integer, description: "The waiting period inside the service, in minutes (0 = none). The staff member is free for someone else during it; the customer stays." }
+        finish_minutes: { type: integer, description: "Work after the waiting period, in minutes. Always 0 when `wait_minutes` is 0." }
+        client_stays_in_room: { type: boolean, description: "True when the customer keeps their room during the waiting period (nobody else is put in it). False when the room is freed during the wait, or the service has no wait." }
+        price_cents: { type: integer, nullable: true, description: "This location's price in minor units (cents) of `currency`. Null when the price is set at checkout." }
+        currency: { type: string, example: "USD", description: "Uppercase ISO 4217 code of the currency every `_cents` field on this object is in (minor units, 2 decimals). Each location has its own currency, so check it rather than assuming USD; a Mexican location is MXN." }
 
     Contact:
       type: object
       properties:
         id: { type: string, format: uuid }
-        location_id: { type: string, format: uuid, nullable: true }
         first_name: { type: string }
         last_name: { type: string, nullable: true }
         phone: { type: string, nullable: true, description: E.164. }
@@ -996,7 +1215,6 @@ components:
       type: object
       required: [first_name]
       properties:
-        location_id: { type: string, format: uuid, description: Defaults to the key's location if it has exactly one. }
         first_name: { type: string }
         last_name: { type: string }
         phone: { type: string, description: Any format; normalized to E.164. }
@@ -1015,14 +1233,36 @@ components:
       properties:
         id: { type: string, format: uuid }
         location_id: { type: string, format: uuid }
-        contact_id: { type: string, format: uuid }
-        service_id: { type: string, format: uuid }
-        technician_id: { type: string, format: uuid, nullable: true }
+        contact_id: { type: string, format: uuid, nullable: true }
+        service_id: { type: string, format: uuid, nullable: true }
+        technician_id: { type: string, format: uuid, nullable: true, description: The staff member. Null for an appointment booked onto a room. }
         start: { type: string, format: date-time }
-        end: { type: string, format: date-time }
-        status: { type: string, enum: [booked, confirmed, completed, cancelled, no_show] }
+        end: { type: string, format: date-time, description: "End of the whole appointment. Set by the server from the staff member's full length for the service, including any waiting period inside the service." }
+        status:
+          type: string
+          enum: [booked, confirmed, checked_in, completed, cancelled, no_show, passed]
+          description: >
+            What the appointment's status means, whatever the business calls it:
+            `booked` (on the schedule; also any custom status with no special
+            meaning), `confirmed` (the customer confirmed), `checked_in` (arrived),
+            `completed`, `cancelled`, `no_show`, `passed` (the time has gone by with
+            no outcome recorded). The business's own name for it is `status_name`.
+        status_name: { type: string, nullable: true, description: "The status as the business names it (for example Booked, or a custom status like Waiting for Payment). For display; use `status` in code." }
+        staff_busy:
+          type: array
+          description: >
+            When the staff member is actually busy during the appointment. One block
+            (start to end) for an ordinary appointment; for a service with a waiting
+            period, the parts before and after the wait (the staff member is free in
+            between). Empty when there is no staff member.
+          items:
+            type: object
+            properties:
+              start: { type: string, format: date-time }
+              end: { type: string, format: date-time }
         source: { type: string, example: api }
         created_at: { type: string, format: date-time }
+        slug: { type: string, nullable: true, description: "The booking's short public reference (used in the customer's manage-booking link)." }
 
     BookingCreate:
       type: object
@@ -1030,8 +1270,8 @@ components:
       properties:
         location_id: { type: string, format: uuid }
         service_id: { type: string, format: uuid, description: "The service as listed for this location (GET /services with location_id). Every location owns its own service rows and prices; if you pass the same service's id from another location, it resolves to this location's row, or returns service_not_found when the service is not offered here." }
-        start: { type: string, format: date-time, description: Start time. Must be an available slot. }
-        technician_id: { type: string, format: uuid, description: Optional preferred staff member. }
+        start: { type: string, format: date-time, description: "Start time, on a whole minute. Use a `start` from `GET /availability`; any other time returns `409 slot_unavailable`." }
+        technician_id: { type: string, format: uuid, description: "The staff member (must perform the service at the location). Omit to have the first free one assigned (see the endpoint description)." }
         contact_id: { type: string, format: uuid, description: An existing contact. Provide this OR `contact`. }
         contact:
           $ref: "#/components/schemas/ContactCreate"
@@ -1045,6 +1285,7 @@ components:
         code: { type: string }
         initial_balance_cents: { type: integer }
         current_balance_cents: { type: integer }
+        currency: { type: string, example: "USD", description: "Uppercase ISO 4217 code of the currency every `_cents` field on this object is in (minor units, 2 decimals). Each location has its own currency, so check it rather than assuming USD; a Mexican location is MXN." }
         status: { type: string, enum: [active, redeemed, expired, void] }
         created_at: { type: string, format: date-time }
 
@@ -1055,6 +1296,7 @@ components:
         location_id: { type: string, format: uuid }
         name: { type: string }
         price_cents: { type: integer }
+        currency: { type: string, example: "USD", description: "Uppercase ISO 4217 code of the currency every `_cents` field on this object is in (minor units, 2 decimals). Each location has its own currency, so check it rather than assuming USD; a Mexican location is MXN." }
         total_sessions: { type: integer, nullable: true }
 
     MembershipPlan:
@@ -1064,6 +1306,7 @@ components:
         location_id: { type: string, format: uuid }
         name: { type: string }
         price_cents: { type: integer }
+        currency: { type: string, example: "USD", description: "Uppercase ISO 4217 code of the currency every `_cents` field on this object is in (minor units, 2 decimals). Each location has its own currency, so check it rather than assuming USD; a Mexican location is MXN." }
         billing_interval: { type: string, enum: [monthly, yearly] }
 
     ContactMembership:
@@ -1100,3 +1343,86 @@ components:
         check_in_method: { type: string }
         checked_in_at: { type: string, format: date-time }
         checked_out_at: { type: string, format: date-time, nullable: true }
+
+    WebhookEndpoint:
+      type: object
+      properties:
+        id: { type: string, format: uuid }
+        url: { type: string, format: uri }
+        event_types:
+          type: array
+          items: { type: string }
+          description: 'Subscribed event types, or ["*"] for all.'
+        description: { type: string, nullable: true }
+        active: { type: boolean }
+        all_locations: { type: boolean, description: True when the endpoint receives events from every location. }
+        location_ids:
+          type: array
+          items: { type: string, format: uuid }
+          description: When all_locations is false, the specific locations this endpoint is scoped to.
+        created_at: { type: string, format: date-time }
+        last_success_at: { type: string, format: date-time, nullable: true, description: When a delivery to this endpoint last succeeded. }
+        last_error: { type: string, nullable: true, description: The most recent delivery error, if any. }
+        last_error_at: { type: string, format: date-time, nullable: true }
+
+    WebhookEndpointWithSecret:
+      allOf:
+        - $ref: "#/components/schemas/WebhookEndpoint"
+        - type: object
+          properties:
+            secret:
+              type: string
+              description: >
+                The HMAC-SHA256 signing secret (whsec_...). Shown ONLY on create and
+                on secret rotation. Store it securely; it is never returned again.
+
+    WebhookDelivery:
+      type: object
+      description: One attempt record of sending an event to an endpoint.
+      properties:
+        id: { type: string, format: uuid }
+        event_type: { type: string }
+        event_id: { type: string, description: The event's stable id (matches the body's `id`, prefixed `evt_`). }
+        status: { type: string, enum: [pending, delivered, failed, exhausted] }
+        attempts: { type: integer }
+        response_status: { type: integer, nullable: true, description: The last HTTP status your receiver returned. }
+        delivered_at: { type: string, format: date-time, nullable: true }
+        last_error: { type: string, nullable: true }
+        created_at: { type: string, format: date-time }
+
+    WebhookEvent:
+      type: object
+      description: >
+        The JSON body Booking Pro POSTs to your endpoint for every event. `data`
+        always carries the booking / location / contact fields; payment events
+        (`payment.received`, `payment.refunded`) add the payment fields below.
+        Money is integer minor units (cents) of `data.currency`.
+      properties:
+        id: { type: string, example: "evt_6f1c2b9e-1d2a-4a51-9a33-0b8c1f7e2d10", description: "Stable event id (also sent as `X-BookingPro-Event-Id`). Use it to deduplicate." }
+        type: { type: string, example: "payment.received", description: The event type. }
+        created_at: { type: string, format: date-time }
+        company_id: { type: string, format: uuid }
+        data:
+          type: object
+          properties:
+            booking_id: { type: string, format: uuid, nullable: true }
+            location_id: { type: string, format: uuid, nullable: true }
+            technician_id: { type: string, format: uuid, nullable: true }
+            starts_at: { type: string, format: date-time, nullable: true }
+            status: { type: string, nullable: true, description: "The booking status as the business names it (present when the event carries one)." }
+            previous_starts_at: { type: string, format: date-time, nullable: true, description: "`booking.rescheduled` only." }
+            previous_technician_id: { type: string, format: uuid, nullable: true, description: "`booking.rescheduled` only." }
+            contact:
+              type: object
+              description: Contact-match fields, so you can find the same person in your own system.
+              properties:
+                contact_id: { type: string, format: uuid, nullable: true }
+                phone: { type: string, nullable: true, description: E.164 phone (+ and country code). }
+                email: { type: string, nullable: true }
+                name: { type: string, nullable: true }
+            payment_id: { type: string, format: uuid, nullable: true, description: "Payment events only." }
+            order_id: { type: string, format: uuid, nullable: true, description: "Payment events only." }
+            amount_cents: { type: integer, nullable: true, description: "Payment events only. The amount in minor units (cents) of `currency`." }
+            tip_cents: { type: integer, description: "Payment events only. The tip in minor units (cents) of `currency`." }
+            currency: { type: string, example: "USD", description: "Payment events only. Uppercase ISO 4217 code of `amount_cents` and `tip_cents`: the order's currency, else the location's. Never assume USD; a Mexican location is MXN." }
+            method: { type: string, nullable: true, description: "Payment events only. How it was paid (card, cash, ...)." }
