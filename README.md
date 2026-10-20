@@ -104,7 +104,9 @@ curl -X POST https://api.bookingpro.ai/api/v1/bookings \
   }'
 ```
 
-A `409` on create or reschedule means the slot was taken between your availability check and your write. Re-fetch availability and offer another time. The full walkthrough is in [docs/quickstart.md](./docs/quickstart.md).
+A `409 slot_unavailable` on create or reschedule means the slot was taken between your availability check and your write. The error includes `alternatives`, up to 3 of the next open slots, so you can offer another time without a second call (a failed reschedule leaves the original appointment untouched). The full walkthrough is in [docs/quickstart.md](./docs/quickstart.md).
+
+Find a client's appointments by what you know about them: `GET /bookings?phone=...` (or `email=...`) returns their bookings plus `contact_found` and `matched_contacts`, each with `client_status` (`new` or `returning`). Add `from=<now>&order=asc&exclude_cancelled=true` for "what's coming up".
 
 ## Endpoints overview
 

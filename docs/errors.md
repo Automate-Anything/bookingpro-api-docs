@@ -37,10 +37,38 @@ Every error response uses the same JSON envelope and an appropriate HTTP status:
 ## Handling conflicts on booking
 
 `POST /bookings` and `/bookings/{id}/reschedule` return `409 slot_unavailable` if the
-slot was taken between your availability check and your write. Re-fetch availability and
-offer the customer another time, do not blindly retry.
+slot was taken between your availability check and your write. The error carries
+`alternatives`, up to 3 of the next open slots for the same service and staff member,
+so you can offer the customer another time right away (or re-fetch
+availability for more). Do not
+blindly retry. A failed reschedule changes nothing: the original appointment stays.
+
+## Locations in different currencies (`currency_mismatch`)
+
+A business can run locations in different currencies (for example dollars in the US and
+pesos in Mexico). Those locations are kept completely separate: nothing that carries money
+or value crosses between them. A request that would (checking in a member whose plan is in
+another currency than the location, using a package or credit bought in another currency,
+and so on) answers `422` with `type: invalid_request` and `code: currency_mismatch`:
+
+```json
+{
+  "error": {
+    "type": "invalid_request",
+    "code": "currency_mismatch",
+    "message": "This membership is in US dollars and this location sells in Mexican pesos. Memberships can only be used at locations that use the same currency.",
+    "request_id": "req_9f2b7c"
+  }
+}
+```
+
+The `message` is written for a person, so you can show it as is. **Do not retry it**: it is
+a business rule, and the same request always gets the same answer. `POST /members/resolve`
+reports the same case before you try, as `valid_for_checkin: false` with
+`reason: currency_mismatch`.
 
 ## Retrying safely
 
-Retry only `429` and `5xx`, with exponential backoff. For creates, always send an
+Retry only `429` and `5xx`, with exponential backoff. Never retry a `4xx` such as
+`currency_mismatch`. For creates, always send an
 [`Idempotency-Key`](./idempotency.md) so a retry cannot create a duplicate.

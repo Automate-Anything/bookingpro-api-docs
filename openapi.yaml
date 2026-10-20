@@ -107,6 +107,13 @@ paths:
 
         Every `start` returned here is accepted by `POST /bookings` (unless someone
         books it first, which returns `409`).
+
+
+        When the requested days have no open time, `next_available` is the first
+        open slot after them (searched up to 60 days ahead, 28 in any-available
+        mode), so you can offer the earliest time without a second call. It is
+        also set to the first slot when there are slots. Pass `limit` to return
+        only the earliest slots (for example `limit=20` for a text conversation).
       parameters:
         - name: location_id
           in: query
@@ -131,6 +138,11 @@ paths:
           required: false
           description: Restrict to a specific staff member. Must be someone who performs the service at the location (otherwise `404 technician_not_found`).
           schema: { type: string, format: uuid }
+        - name: limit
+          in: query
+          required: false
+          description: Return at most this many slots, earliest first (1-500). Omit for every slot in the range.
+          schema: { type: integer, minimum: 1, maximum: 500 }
       responses:
         "200":
           description: Available slots.
@@ -141,14 +153,15 @@ paths:
                 properties:
                   location_id: { type: string, format: uuid }
                   service_id: { type: string, format: uuid }
+                  timezone: { type: string, example: "America/New_York", description: "The location's timezone. Every `start`/`end` is an absolute UTC time; use this to say it in the location's local time." }
                   slots:
                     type: array
-                    items:
-                      type: object
-                      properties:
-                        start: { type: string, format: date-time }
-                        end: { type: string, format: date-time, description: "When the appointment would end: `start` plus the whole visit with this slot's staff member (their duration for the service, including any waiting period inside it)." }
-                        technician_id: { type: string, format: uuid, nullable: true, description: "The staff member this slot is with: the one you asked for, the one `POST /bookings` assigns in any-available mode, or null at a location that books onto rooms." }
+                    items: { $ref: "#/components/schemas/Slot" }
+                  next_available:
+                    nullable: true
+                    description: The earliest open slot (the first of `slots`, or the first after the requested days when they have none). Null when nothing is open in the search window.
+                    allOf:
+                      - $ref: "#/components/schemas/Slot"
         "401": { $ref: "#/components/responses/Unauthorized" }
         "403": { $ref: "#/components/responses/Forbidden" }
         "404":
@@ -315,8 +328,33 @@ paths:
       operationId: listBookings
       tags: [Bookings]
       summary: List bookings
+      description: >
+        Lists bookings, newest first by default. To find a client's appointments
+        from what you know about them, pass `phone` and/or `email`: the client is
+        matched the same way booking matches a contact (any stored phone format),
+        and the response adds `contact_found` and `matched_contacts` (more than one
+        person can share a phone). Each matched contact carries `client_status`:
+        `returning` when they have a past visit (an appointment completed, checked in
+        or passed), otherwise `new`. For a "what are my upcoming appointments" lookup use
+        `from` = now, `order=asc` and `exclude_cancelled=true`.
       parameters:
         - $ref: "#/components/parameters/LocationId"
+        - name: phone
+          in: query
+          description: Only bookings of the contact(s) with this phone number (any format; at least 7 digits).
+          schema: { type: string }
+        - name: email
+          in: query
+          description: Only bookings of the contact(s) with this email (case-insensitive exact match).
+          schema: { type: string }
+        - name: exclude_cancelled
+          in: query
+          description: Leave out cancelled bookings.
+          schema: { type: boolean, default: false }
+        - name: order
+          in: query
+          description: Sort by start time, `desc` (newest first, the default) or `asc` (soonest first).
+          schema: { type: string, enum: [asc, desc], default: desc }
         - name: from
           in: query
           description: Include bookings starting on/after this date-time.
@@ -342,7 +380,21 @@ paths:
                     type: array
                     items: { $ref: "#/components/schemas/Booking" }
                   next_cursor: { type: string, nullable: true }
+                  contact_found: { type: boolean, description: "Only when `phone` or `email` was passed: whether any contact matched. False means this is a new client; `data` is then empty." }
+                  matched_contacts:
+                    type: array
+                    description: Only when `phone` or `email` was passed. The contacts that matched.
+                    items:
+                      type: object
+                      properties:
+                        id: { type: string, format: uuid }
+                        first_name: { type: string, nullable: true }
+                        last_name: { type: string, nullable: true }
+                        phone: { type: string, nullable: true }
+                        email: { type: string, nullable: true }
+                        client_status: { type: string, enum: [new, returning], description: "`returning` when the client has a past visit (an appointment completed, checked in or passed), otherwise `new`." }
         "401": { $ref: "#/components/responses/Unauthorized" }
+        "422": { $ref: "#/components/responses/ValidationError" }
     post:
       operationId: createBooking
       tags: [Bookings]
@@ -409,6 +461,13 @@ paths:
         calendar event is removed, and automations and webhooks
         (`booking.cancelled`) fire. Cancelling a booking that is already cancelled
         changes nothing and returns it.
+
+        Money: anything the customer already paid toward the appointment (a
+        deposit) becomes their store credit with the business. When the
+        business's late-cancellation policy applies, the fee is taken from that
+        deposit first (a $100 deposit with a $25 late fee leaves $75 of credit).
+        Nothing is refunded to a card automatically; the business can refund the
+        credit or waive the fee from the dashboard.
       parameters:
         - $ref: "#/components/parameters/PathId"
       requestBody:
@@ -471,6 +530,10 @@ paths:
       operationId: listGiftCards
       tags: [Gift Cards]
       summary: List gift cards
+      description: >
+        Gift cards issued at the key's locations (a location-limited key does not see
+        cards of other locations, or cards that belong to no single location). Pass
+        `location_id` to narrow to one of the key's locations.
       parameters:
         - $ref: "#/components/parameters/LocationId"
         - $ref: "#/components/parameters/Limit"
@@ -488,12 +551,17 @@ paths:
                     items: { $ref: "#/components/schemas/GiftCard" }
                   next_cursor: { type: string, nullable: true }
         "401": { $ref: "#/components/responses/Unauthorized" }
+        "403": { $ref: "#/components/responses/Forbidden" }
+        "422": { $ref: "#/components/responses/ValidationError" }
 
   /gift-cards/{id}:
     get:
       operationId: getGiftCard
       tags: [Gift Cards]
       summary: Retrieve a gift card
+      description: >
+        A gift card outside the key's locations answers `404`, exactly like one that does
+        not exist (same rule as the list).
       parameters:
         - $ref: "#/components/parameters/PathId"
       responses:
@@ -524,6 +592,8 @@ paths:
                     type: array
                     items: { $ref: "#/components/schemas/Package" }
         "401": { $ref: "#/components/responses/Unauthorized" }
+        "403": { $ref: "#/components/responses/Forbidden" }
+        "422": { $ref: "#/components/responses/ValidationError" }
 
   /memberships:
     get:
@@ -544,13 +614,18 @@ paths:
                     type: array
                     items: { $ref: "#/components/schemas/MembershipPlan" }
         "401": { $ref: "#/components/responses/Unauthorized" }
+        "403": { $ref: "#/components/responses/Forbidden" }
+        "422": { $ref: "#/components/responses/ValidationError" }
 
   /contacts/{id}/memberships:
     get:
       operationId: listContactMemberships
       tags: [Memberships]
       summary: List a contact's memberships
-      description: The memberships a contact holds (as primary member or family member), with status and remaining credits.
+      description: >
+        The memberships a contact holds (as primary member or family member), with status
+        and remaining credits. A location-limited key sees only memberships whose home
+        location is one of its locations.
       parameters:
         - $ref: "#/components/parameters/PathId"
       responses:
@@ -577,7 +652,11 @@ paths:
         returns the matching membership and whether the member is currently
         eligible to check in. Use this from a kiosk, turnstile, or a biometric
         device (map a face/fingerprint to the member's code, then call this) to
-        decide whether to let someone in, without recording a visit.
+        decide whether to let someone in, without recording a visit. The answer runs
+        every rule `POST /members/check-in` runs (membership active, facility plan,
+        blackout window, location covered, home-location-only, the location's check-in
+        blocks, credits, and the currency rule), so `valid_for_checkin: true` means the
+        check-in will be accepted.
       requestBody:
         required: true
         content:
@@ -644,7 +723,10 @@ paths:
         "403": { $ref: "#/components/responses/Forbidden" }
         "404": { $ref: "#/components/responses/NotFound" }
         "422":
-          description: The check-in was denied (not eligible, no credits, wrong location, etc). The message says why.
+          description: >
+            The check-in was denied (not eligible, no credits, wrong location, etc). The message
+            says why. `currency_mismatch` means the membership is in another currency than this
+            location (see CurrencyMismatch); do not retry it.
           content:
             application/json:
               schema: { $ref: "#/components/schemas/Error" }
@@ -654,6 +736,9 @@ paths:
       operationId: listMemberVisits
       tags: [Members]
       summary: List a membership's check-ins
+      description: >
+        A location-limited key sees only memberships whose home location is one of its
+        locations (another answers `404`), and only the check-ins made at its locations.
       parameters:
         - $ref: "#/components/parameters/PathId"
         - $ref: "#/components/parameters/Limit"
@@ -810,6 +895,7 @@ paths:
                   late: { type: boolean }
         "401": { $ref: "#/components/responses/Unauthorized" }
         "404": { $ref: "#/components/responses/NotFound" }
+        "422": { $ref: "#/components/responses/CurrencyMismatch" }
 
   /classes/{id}/check-in:
     post:
@@ -849,7 +935,10 @@ paths:
         "401": { $ref: "#/components/responses/Unauthorized" }
         "404": { $ref: "#/components/responses/NotFound" }
         "422":
-          description: The check-in was refused (`checkin_blocked` with `reasons`, or a rule such as a cancelled spot).
+          description: >
+            The check-in was refused (`checkin_blocked` with `reasons`, or a rule such as a
+            cancelled spot), or `currency_mismatch`: what covers the class is in another currency
+            than this location (see CurrencyMismatch; do not retry).
           content:
             application/json:
               schema: { $ref: "#/components/schemas/Error" }
@@ -862,7 +951,9 @@ paths:
       description: >
         Returns the webhook endpoints registered for your account. The signing
         secret is never returned here; it is shown only once, when the endpoint is
-        created (or its secret rotated).
+        created (or its secret rotated). A location-limited key sees and manages only
+        endpoints limited to its own locations (never an all-locations endpoint);
+        any other endpoint answers `404` to it on every webhook route.
       responses:
         "200":
           description: Your webhook endpoints.
@@ -1065,7 +1156,12 @@ components:
         application/json:
           schema: { $ref: "#/components/schemas/Error" }
     Conflict:
-      description: The requested time conflicts with an existing booking or block.
+      description: >
+        The requested time conflicts with an existing booking or block. For
+        `slot_unavailable`, `error.alternatives` lists up to 3 of the next open
+        slots after the requested time (same service and staff member), so you can
+        offer them right away. Nothing was changed: a failed reschedule leaves the
+        original appointment exactly as it was.
       content:
         application/json:
           schema: { $ref: "#/components/schemas/Error" }
@@ -1074,6 +1170,28 @@ components:
               type: conflict
               code: slot_unavailable
               message: That time is no longer available.
+              alternatives:
+                - start: "2026-10-20T15:00:00Z"
+                  end: "2026-10-20T17:15:00Z"
+                  technician_id: "3f1c2a9e-0b7d-4c55-9a1e-6d2f8b4c7a10"
+                  technician_name: Jane Smith
+              request_id: req_9f2b7c
+    CurrencyMismatch:
+      description: >
+        `currency_mismatch` (type `invalid_request`): the business keeps locations that
+        use different currencies completely separate, and this request would carry money
+        or value between them (for example a membership or package bought in one currency,
+        used at a location of another). The `message` says why in plain words, ready to
+        show a person. It is a business rule, not a failure: do NOT retry it; the same
+        request always gets the same answer.
+      content:
+        application/json:
+          schema: { $ref: "#/components/schemas/Error" }
+          example:
+            error:
+              type: invalid_request
+              code: currency_mismatch
+              message: This membership is in US dollars and this location sells in Mexican pesos. Memberships can only be used at locations that use the same currency.
               request_id: req_9f2b7c
     ServiceUnavailable:
       description: >
@@ -1174,7 +1292,19 @@ components:
             code: { type: string, description: A stable machine-readable code. }
             message: { type: string, description: A human-readable explanation. }
             param: { type: string, nullable: true, description: The offending field, when applicable. }
+            alternatives:
+              type: array
+              description: "Only on `409 slot_unavailable`: up to 3 open slots after the requested time. Empty when none are open in the next two weeks."
+              items: { $ref: "#/components/schemas/Slot" }
             request_id: { type: string, description: Quote this when contacting support. }
+
+    Slot:
+      type: object
+      properties:
+        start: { type: string, format: date-time }
+        end: { type: string, format: date-time, description: "When the appointment would end: `start` plus the whole visit with this slot's staff member (their duration for the service, including any waiting period inside it)." }
+        technician_id: { type: string, format: uuid, nullable: true, description: "The staff member this slot is with: the one you asked for, the one `POST /bookings` assigns in any-available mode, or null at a location that books onto rooms." }
+        technician_name: { type: string, nullable: true, description: The staff member's name, for saying the slot to a person. }
 
     Location:
       type: object
@@ -1286,8 +1416,10 @@ components:
         initial_balance_cents: { type: integer }
         current_balance_cents: { type: integer }
         currency: { type: string, example: "USD", description: "Uppercase ISO 4217 code of the currency every `_cents` field on this object is in (minor units, 2 decimals). Each location has its own currency, so check it rather than assuming USD; a Mexican location is MXN." }
-        status: { type: string, enum: [active, redeemed, expired, void] }
+        status: { type: string, enum: [active, partially_redeemed, redeemed, expired, voided], description: "`active` = full balance; `partially_redeemed` = some used; `redeemed` = balance 0; `expired` = past its expiry; `voided` = cancelled by the business (balance 0)." }
         created_at: { type: string, format: date-time }
+        replaced_by_gift_card_id: { type: string, format: uuid, nullable: true, description: "Set when the business replaced this card (lost, damaged, or the customer needed a different card): its whole balance moved to the card with this id, so this card is `voided` at balance 0. The customer kept their money; it is on the new card." }
+        replaces_gift_card_id: { type: string, format: uuid, nullable: true, description: "Set on a replacement card: the id of the card whose balance moved onto it. Nothing was sold." }
 
     Package:
       type: object
@@ -1330,7 +1462,16 @@ components:
         contact_id: { type: string, format: uuid, nullable: true }
         resolved_by: { type: string, nullable: true, enum: [code, fob] }
         valid_for_checkin: { type: boolean }
-        reason: { type: string, description: "eligible, or why not (e.g. no_credits_remaining, membership_not_active, location_not_covered)." }
+        reason:
+          type: string
+          description: >
+            `eligible`, or why not: `memberships_not_enabled_at_location`, `membership_not_found`,
+            `membership_not_active`, `plan_not_found`, `plan_not_facility_access`, `blackout_period`,
+            `location_not_covered`, `home_location_only`, `contact_not_a_member`, `checkin_blocked`
+            (see `block_reasons`), `no_credits_remaining`, `currency_mismatch` (the membership is in
+            another currency than this location; see `message`), or `no_member_for_identifier`.
+        message: { type: string, description: "A plain sentence to show a person, when the reason has one (currency_mismatch)." }
+        block_reasons: { type: array, items: { type: string }, description: "With checkin_blocked: the location's check-in blocks that apply (e.g. past due, no card on file)." }
         plan_name: { type: string, nullable: true }
         status: { type: string, nullable: true }
 

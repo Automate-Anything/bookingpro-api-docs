@@ -40,8 +40,14 @@ returns `403 insufficient_scope`. Grant only what an integration needs.
 ## Locations
 
 A key is scoped to specific locations, or to **all** locations in the company (an
-explicit choice at mint time). Reads and writes are always confined to the key's
-locations. `/ping` shows which locations a key can act on.
+explicit choice at mint time). Everything that belongs to a location (availability,
+services, bookings, gift cards, packages, membership plans, a contact's memberships and
+their check-ins, classes, and webhook endpoints) is confined to the key's locations: a
+location-limited key never sees or changes another location's records, and a record of
+another location answers `404`, exactly like one that does not exist. Records that
+belong to no single location (company-wide) are visible only to an all-locations key.
+Contacts are shared by every location of the business, so `read:contacts` and
+`write:contacts` reach every contact. `/ping` shows which locations a key can act on.
 
 ## Environments
 

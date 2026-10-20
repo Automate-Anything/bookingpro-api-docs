@@ -44,12 +44,15 @@ Without `technician_id`: at a location where every appointment needs a staff mem
 
 Every `start` returned here is accepted by `POST /bookings` (unless someone books it first, which returns `409`).
 
+When the requested days have no open time, `next_available` is the first open slot after them (searched up to 60 days ahead, 28 in any-available mode), so you can offer the earliest time without a second call. It is also set to the first slot when there are slots. Pass `limit` to return only the earliest slots (for example `limit=20` for a text conversation).
+
 Parameters:
 - `location_id` (query) (required)
 - `service_id` (query) (required)
 - `date` (query) (required) - Start date (YYYY-MM-DD), interpreted in the location's timezone.
 - `days` (query) - Number of days from `date` to include (1-31). Defaults to 1.
 - `technician_id` (query) - Restrict to a specific staff member. Must be someone who performs the service at the location (otherwise `404 technician_not_found`).
+- `limit` (query) - Return at most this many slots, earliest first (1-500). Omit for every slot in the range.
 
 Success: `200`
 
@@ -152,9 +155,14 @@ Success: `200`
 
 Scope: `read:bookings (read), write:bookings (create/cancel/reschedule)`
 
-**List bookings.** 
+**List bookings.** Lists bookings, newest first by default. To find a client's appointments from what you know about them, pass `phone` and/or `email`: the client is matched the same way booking matches a contact (any stored phone format), and the response adds `contact_found` and `matched_contacts` (more than one person can share a phone). Each matched contact carries `client_status`: `returning` when they have a past visit (an appointment completed, checked in or passed), otherwise `new`. For a "what are my upcoming appointments" lookup use `from` = now, `order=asc` and `exclude_cancelled=true`.
+
 Parameters:
 - `location_id` (query) - Restrict to a single location. Must be one the key can access.
+- `phone` (query) - Only bookings of the contact(s) with this phone number (any format; at least 7 digits).
+- `email` (query) - Only bookings of the contact(s) with this email (case-insensitive exact match).
+- `exclude_cancelled` (query) - Leave out cancelled bookings.
+- `order` (query) - Sort by start time, `desc` (newest first, the default) or `asc` (soonest first).
 - `from` (query) - Include bookings starting on/after this date-time.
 - `to` (query) - Include bookings starting before this date-time.
 - `contact_id` (query)
@@ -200,6 +208,7 @@ Success: `200`
 Scope: `read:bookings (read), write:bookings (create/cancel/reschedule)`
 
 **Cancel a booking.** Cancels the appointment the same way the dashboard does: it gets the business's Cancelled status, the customer and staff are notified, the calendar event is removed, and automations and webhooks (`booking.cancelled`) fire. Cancelling a booking that is already cancelled changes nothing and returns it.
+Money: anything the customer already paid toward the appointment (a deposit) becomes their store credit with the business. When the business's late-cancellation policy applies, the fee is taken from that deposit first (a $100 deposit with a $25 late fee leaves $75 of credit). Nothing is refunded to a card automatically; the business can refund the credit or waive the fee from the dashboard.
 
 Parameters:
 - `id` (path) (required)
@@ -232,7 +241,8 @@ Success: `200`
 
 Scope: `read:giftcards`
 
-**List gift cards.** 
+**List gift cards.** Gift cards issued at the key's locations (a location-limited key does not see cards of other locations, or cards that belong to no single location). Pass `location_id` to narrow to one of the key's locations.
+
 Parameters:
 - `location_id` (query) - Restrict to a single location. Must be one the key can access.
 - `limit` (query)
@@ -246,7 +256,8 @@ Success: `200`
 
 Scope: `read:giftcards`
 
-**Retrieve a gift card.** 
+**Retrieve a gift card.** A gift card outside the key's locations answers `404`, exactly like one that does not exist (same rule as the list).
+
 Parameters:
 - `id` (path) (required)
 
@@ -282,7 +293,7 @@ Success: `200`
 
 Scope: `read:memberships`
 
-**List a contact's memberships.** The memberships a contact holds (as primary member or family member), with status and remaining credits.
+**List a contact's memberships.** The memberships a contact holds (as primary member or family member), with status and remaining credits. A location-limited key sees only memberships whose home location is one of its locations.
 
 Parameters:
 - `id` (path) (required)
@@ -295,7 +306,7 @@ Success: `200`
 
 Scope: `checkin:members (resolve/check-in), read:memberships (visit history)`
 
-**Resolve a member and check eligibility.** Given a credential (a member code or an RFID fob/card UID) and a location, returns the matching membership and whether the member is currently eligible to check in. Use this from a kiosk, turnstile, or a biometric device (map a face/fingerprint to the member's code, then call this) to decide whether to let someone in, without recording a visit.
+**Resolve a member and check eligibility.** Given a credential (a member code or an RFID fob/card UID) and a location, returns the matching membership and whether the member is currently eligible to check in. Use this from a kiosk, turnstile, or a biometric device (map a face/fingerprint to the member's code, then call this) to decide whether to let someone in, without recording a visit. The answer runs every rule `POST /members/check-in` runs (membership active, facility plan, blackout window, location covered, home-location-only, the location's check-in blocks, credits, and the currency rule), so `valid_for_checkin: true` means the check-in will be accepted.
 
 Request body:
   - `identifier`: string (required) - The member's code or fob/card UID.
@@ -330,7 +341,8 @@ Success: `201`
 
 Scope: `checkin:members (resolve/check-in), read:memberships (visit history)`
 
-**List a membership's check-ins.** 
+**List a membership's check-ins.** A location-limited key sees only memberships whose home location is one of its locations (another answers `404`), and only the check-ins made at its locations.
+
 Parameters:
 - `id` (path) (required)
 - `limit` (query)
@@ -428,7 +440,7 @@ Success: `201`
 
 Scope: `read:webhooks (read), write:webhooks (create/delete/rotate secret)`
 
-**List webhook endpoints.** Returns the webhook endpoints registered for your account. The signing secret is never returned here; it is shown only once, when the endpoint is created (or its secret rotated).
+**List webhook endpoints.** Returns the webhook endpoints registered for your account. The signing secret is never returned here; it is shown only once, when the endpoint is created (or its secret rotated). A location-limited key sees and manages only endpoints limited to its own locations (never an all-locations endpoint); any other endpoint answers `404` to it on every webhook route.
 
 Success: `200`
 

@@ -88,8 +88,8 @@ curl -X POST https://api.bookingpro.ai/api/v1/bookings \
   }'
 ```
 
-If someone takes the time in between, you get `409 slot_unavailable`: fetch
-availability again and pick another slot.
+If someone takes the time in between, you get `409 slot_unavailable` with
+`error.alternatives`: up to 3 of the next open slots to offer instead.
 
 That is the whole loop. Explore every endpoint in the
 [API reference](https://developers.bookingpro.ai/docs/api-reference/general/ping), which has an interactive playground.
