@@ -306,7 +306,7 @@ Success: `200`
 
 Scope: `checkin:members (resolve/check-in), read:memberships (visit history)`
 
-**Resolve a member and check eligibility.** Given a credential (a member code or an RFID fob/card UID) and a location, returns the matching membership and whether the member is currently eligible to check in. Use this from a kiosk, turnstile, or a biometric device (map a face/fingerprint to the member's code, then call this) to decide whether to let someone in, without recording a visit. The answer runs every rule `POST /members/check-in` runs (membership active, facility plan, blackout window, location covered, home-location-only, the location's check-in blocks, credits, and the currency rule), so `valid_for_checkin: true` means the check-in will be accepted.
+**Resolve a member (code, fob, or device) and check eligibility.** Given a credential (a member code or an RFID fob/card UID) and a location, returns the matching membership and whether the member is currently eligible to check in. Use this from a kiosk, turnstile, or a biometric device (map a face/fingerprint to the member's code, then call this) to decide whether to let someone in, without recording a visit. The answer runs every rule `POST /members/check-in` runs (membership active, facility plan, blackout window, location covered, home-location-only, the location's check-in blocks, credits, and the currency rule), so `valid_for_checkin: true` means the check-in will be accepted.
 
 Request body:
   - `identifier`: string (required) - The member's code or fob/card UID.
@@ -320,7 +320,7 @@ Success: `200`
 
 Scope: `checkin:members (resolve/check-in), read:memberships (visit history)`
 
-**Check a member in.** Records a facility check-in for a member. Provide either an `identifier` (member code or fob UID, which is resolved for you) or an explicit `membership_id` + `contact_id`. Enforces the same rules as the dashboard: membership active, plan allows facility access, the location is covered, cross-location rules, and available credits. Send an `Idempotency-Key` so a retry or a double-scan does not log two visits.
+**Check a member in (records a visit).** Records a facility check-in for a member. Provide either an `identifier` (member code or fob UID, which is resolved for you) or an explicit `membership_id` + `contact_id`. Enforces the same rules as the dashboard: membership active, plan allows facility access, the location is covered, cross-location rules, and available credits. Send an `Idempotency-Key` so a retry or a double-scan does not log two visits.
 
 Parameters:
 - `Idempotency-Key` (header) - A unique key you generate per logical create. Retrying with the same key returns the original result instead of creating a duplicate.

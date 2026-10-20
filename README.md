@@ -48,6 +48,7 @@ Full details: [docs/authentication.md](./docs/authentication.md).
 
 A request that needs a scope the key does not have returns `403 insufficient_scope`. Grant only what an integration needs.
 
+<!-- generated:scopes:start (built from openapi.yaml x-scopes by the sync workflow; edit the source, not this table) -->
 | Scope | Grants |
 | --- | --- |
 | `read:availability` | Read open slots |
@@ -64,6 +65,7 @@ A request that needs a scope the key does not have returns `403 insufficient_sco
 | `write:classes` | Book, cancel and check in class spots |
 | `read:webhooks` | List webhook endpoints and their delivery log |
 | `write:webhooks` | Register and delete webhook endpoints, rotate their signing secret |
+<!-- generated:scopes:end -->
 
 ## Quickstart
 
@@ -112,6 +114,7 @@ Find a client's appointments by what you know about them: `GET /bookings?phone=.
 
 Every endpoint in `v1`, derived from [`openapi.yaml`](./openapi.yaml):
 
+<!-- generated:endpoints:start (built from openapi.yaml paths by the sync workflow; edit the source, not this table) -->
 | Method | Path | Summary |
 | --- | --- | --- |
 | GET | `/ping` | Verify a key |
@@ -135,7 +138,7 @@ Every endpoint in `v1`, derived from [`openapi.yaml`](./openapi.yaml):
 | GET | `/contacts/{id}/memberships` | List a contact's memberships |
 | POST | `/members/resolve` | Resolve a member (code, fob, or device) and check eligibility |
 | POST | `/members/check-in` | Check a member in (records a visit) |
-| GET | `/members/{id}/visits` | List a member's recent check-ins |
+| GET | `/members/{id}/visits` | List a membership's check-ins |
 | GET | `/classes` | List classes (the timetable) |
 | GET | `/classes/{id}` | Retrieve a class with its roster |
 | POST | `/classes/{id}/book` | Book a contact into a class |
@@ -147,6 +150,7 @@ Every endpoint in `v1`, derived from [`openapi.yaml`](./openapi.yaml):
 | DELETE | `/webhooks/{id}` | Delete a webhook endpoint |
 | POST | `/webhooks/{id}/rotate-secret` | Rotate a webhook's signing secret |
 | GET | `/webhooks/{id}/deliveries` | List recent deliveries for a webhook |
+<!-- generated:endpoints:end -->
 
 Each path is fully specified (parameters, request bodies, response schemas) in [`openapi.yaml`](./openapi.yaml), and rendered with an interactive playground at [developers.bookingpro.ai](https://developers.bookingpro.ai).
 

@@ -11,10 +11,11 @@ We publish a ready-made **Agent Skill** (authored to the open
 and GitHub Copilot). It teaches an agent how to authenticate, the conventions, common
 recipes, and the full endpoint catalog, all kept in sync with this reference.
 
+- [Download the skill (.zip)](https://developers.bookingpro.ai/skill/booking-pro-api.zip): Unzip into your agent's skills directory.
+- [View SKILL.md](https://developers.bookingpro.ai/skill/booking-pro-api/SKILL.md): Read it directly.
+
 - **Get the skill from this repo**: the [`skill/`](../skill/) folder (`SKILL.md` plus
   `reference/endpoints.md`). Copy it into your agent's skills directory.
-- **Hosted copy**: `https://developers.bookingpro.ai/skill/booking-pro-api/SKILL.md`,
-  and a zipped bundle at `https://developers.bookingpro.ai/skill/booking-pro-api.zip`.
 
 Give the agent a key (as an environment variable, never inline) and it can check
 availability, book, and manage contacts on your behalf.
@@ -23,9 +24,9 @@ availability, book, and manage contacts on your behalf.
 
 - Click **Copy Markdown** at the top of any page on the docs site.
 - Or append `.md` to any page's URL to fetch its Markdown.
-- `https://developers.bookingpro.ai/llms.txt` is a compact index of the whole site.
-- `https://developers.bookingpro.ai/llms-full.txt` is every page concatenated, ready to
-  paste into a context window.
+- [`/llms.txt`](https://developers.bookingpro.ai/llms.txt) is a compact index of the whole site.
+- [`/llms-full.txt`](https://developers.bookingpro.ai/llms-full.txt) is every page concatenated, ready to paste into a
+  context window.
 
 ## A note on keys
 

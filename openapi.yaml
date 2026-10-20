@@ -646,7 +646,7 @@ paths:
     post:
       operationId: resolveMember
       tags: [Members]
-      summary: Resolve a member and check eligibility
+      summary: Resolve a member (code, fob, or device) and check eligibility
       description: >
         Given a credential (a member code or an RFID fob/card UID) and a location,
         returns the matching membership and whether the member is currently
@@ -681,7 +681,7 @@ paths:
     post:
       operationId: checkInMember
       tags: [Members]
-      summary: Check a member in
+      summary: Check a member in (records a visit)
       description: >
         Records a facility check-in for a member. Provide either an `identifier`
         (member code or fob UID, which is resolved for you) or an explicit
@@ -1094,6 +1094,24 @@ components:
       description: >
         Send your API key as a bearer token: `Authorization: Bearer bp_sk_live_...`.
         Mint and revoke keys in your dashboard under Settings -> Developers.
+      # Every scope a key can be given, with what it grants. The ONE source for the scopes
+      # table in the public repo README (api-docs/scripts/sync-public-repo.mjs); the drift
+      # check (billing-server/scripts/check-openapi-drift.mjs) keeps it equal to VALID_SCOPES.
+      x-scopes:
+        "read:availability": "Read open slots"
+        "read:catalog": "Read services and locations"
+        "read:contacts": "Read contacts"
+        "write:contacts": "Create and update contacts"
+        "read:bookings": "Read bookings"
+        "write:bookings": "Create, cancel, reschedule bookings"
+        "read:giftcards": "Read gift cards"
+        "read:packages": "Read package templates"
+        "read:memberships": "Read membership plans, what a customer holds, and a membership's check-ins"
+        "checkin:members": "Resolve and check in members (kiosk, turnstile, biometric device)"
+        "read:classes": "Read the class timetable and rosters (gyms and studios)"
+        "write:classes": "Book, cancel and check in class spots"
+        "read:webhooks": "List webhook endpoints and their delivery log"
+        "write:webhooks": "Register and delete webhook endpoints, rotate their signing secret"
 
   parameters:
     PathId:

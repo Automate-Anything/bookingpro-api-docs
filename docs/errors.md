@@ -40,7 +40,7 @@ Every error response uses the same JSON envelope and an appropriate HTTP status:
 slot was taken between your availability check and your write. The error carries
 `alternatives`, up to 3 of the next open slots for the same service and staff member,
 so you can offer the customer another time right away (or re-fetch
-availability for more). Do not
+[availability](https://developers.bookingpro.ai/docs/api-reference/availability/getAvailability) for more). Do not
 blindly retry. A failed reschedule changes nothing: the original appointment stays.
 
 ## Locations in different currencies (`currency_mismatch`)

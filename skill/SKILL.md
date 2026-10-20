@@ -104,8 +104,8 @@ interactive playground at https://developers.bookingpro.ai.
 | GET | `/packages` | List package templates |
 | GET | `/memberships` | List membership plans |
 | GET | `/contacts/{id}/memberships` | List a contact's memberships |
-| POST | `/members/resolve` | Resolve a member and check eligibility |
-| POST | `/members/check-in` | Check a member in |
+| POST | `/members/resolve` | Resolve a member (code, fob, or device) and check eligibility |
+| POST | `/members/check-in` | Check a member in (records a visit) |
 | GET | `/members/{id}/visits` | List a membership's check-ins |
 | GET | `/classes` | List classes (the timetable) |
 | GET | `/classes/{id}` | Retrieve a class with its roster |
