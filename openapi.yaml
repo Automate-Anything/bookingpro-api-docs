@@ -1346,6 +1346,7 @@ components:
         wait_minutes: { type: integer, description: "The waiting period inside the service, in minutes (0 = none). The staff member is free for someone else during it; the customer stays." }
         finish_minutes: { type: integer, description: "Work after the waiting period, in minutes. Always 0 when `wait_minutes` is 0." }
         client_stays_in_room: { type: boolean, description: "True when the customer keeps their room during the waiting period (nobody else is put in it). False when the room is freed during the wait, or the service has no wait." }
+        staff_needed: { type: integer, minimum: 1, maximum: 6, example: 1, description: "Staff members one booking of this service needs at the same time (a couples massage = 2). `GET /availability` only returns a time when that many staff members who do the service are free together (and, when the business uses rooms, a room has that many places). `POST /bookings` then books all of them: the returned booking is the customer's appointment, worked by `staff_needed` staff members, with the price split evenly between them." }
         price_cents: { type: integer, nullable: true, description: "This location's price in minor units (cents) of `currency`. Null when the price is set at checkout." }
         currency: { type: string, example: "USD", description: "Uppercase ISO 4217 code of the currency every `_cents` field on this object is in (minor units, 2 decimals). Each location has its own currency, so check it rather than assuming USD; a Mexican location is MXN." }
 

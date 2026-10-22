@@ -2,6 +2,17 @@
 
 API changes, additions, and deprecations.
 
+## 2026-10-21: Services that need several staff members
+
+Additive; no existing field changed.
+
+- `GET /services` and `GET /services/{id}` return `staff_needed` (1 to 6). A couples massage
+  is 2: one appointment, two staff members at the same time, in one room.
+- For such a service `GET /availability` only returns times when that many staff members
+  who do it are free together, and `POST /bookings` books all of them (you send one
+  booking; the business sees one booking per staff member, linked). The price is split
+  evenly between them; the customer pays the service price once.
+
 ## 2026-10-20: Booking a client who has no phone
 
 - Fix: `POST /bookings` with a `contact_id` for a client who has an email but no phone
