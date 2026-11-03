@@ -1586,3 +1586,4 @@ components:
             tip_cents: { type: integer, description: "Payment events only. The tip in minor units (cents) of `currency`." }
             currency: { type: string, example: "USD", description: "Payment events only. Uppercase ISO 4217 code of `amount_cents` and `tip_cents`: the order's currency, else the location's. Never assume USD; a Mexican location is MXN." }
             method: { type: string, nullable: true, description: "Payment events only. How it was paid (card, cash, ...)." }
+            merchant: { type: string, format: uuid, description: "Payment events only, and only when the payment belongs to a booth renter (an independent stylist who rents a chair or room at the business and takes their own payments): that person's staff id (the same id as `technician_id`). Absent means the payment belongs to the business itself. Use it to keep a renter's takings out of the business's own revenue." }
