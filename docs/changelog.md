@@ -2,6 +2,18 @@
 
 API changes, additions, and deprecations.
 
+## 2026-11-02: Staff with Online booking off
+
+Additive; nothing changes for existing keys.
+
+- A staff member whose **Online booking** switch is off at a location is not offered by
+  `GET /availability` and cannot be booked or rescheduled onto with `POST /bookings` or
+  `POST /bookings/{id}/reschedule` (`technician_not_found`), the same as on the business's
+  booking page. Clients never reach them.
+- A key with **Can book staff with Online booking off** (set by the business under
+  Developers, per key) still sees and books them, for a business's own test or front desk
+  integrations. Everything else about the key is unchanged.
+
 ## 2026-10-21: Services that need several staff members
 
 Additive; no existing field changed.
