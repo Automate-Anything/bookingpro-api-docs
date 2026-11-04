@@ -84,6 +84,33 @@ Success: `200`
 
 ---
 
+## GET /products
+
+Scope: `read:catalog`
+
+**List products.** The products of each location's online store, scoped to the key's locations: only a location whose online store is switched on, and only the products shoppers can see there, with that location's price and the name shoppers see (the product's online name when the business set one). Each location lists its own rows. The list is complete in one response (not paginated). Orders are placed through the business's own store checkout, not this API.
+
+Parameters:
+- `location_id` (query) - Restrict to a single location. Must be one the key can access.
+
+Success: `200`
+
+---
+
+## GET /products/{id}
+
+Scope: `read:catalog`
+
+**Retrieve a product.** The same object `GET /products` returns, from the first of the key's locations whose store sells it (or the `location_id` you pass). A product that list hides (store off, offline, deleted, not stocked at the location) is a `404`.
+
+Parameters:
+- `id` (path) (required)
+- `location_id` (query) - Restrict to a single location. Must be one the key can access.
+
+Success: `200`
+
+---
+
 ## GET /locations
 
 Scope: `read:catalog`

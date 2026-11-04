@@ -89,6 +89,8 @@ interactive playground at https://developers.bookingpro.ai.
 | GET | `/availability` | List open slots |
 | GET | `/services` | List services |
 | GET | `/services/{id}` | Retrieve a service |
+| GET | `/products` | List products |
+| GET | `/products/{id}` | Retrieve a product |
 | GET | `/locations` | List locations |
 | GET | `/contacts` | List contacts |
 | POST | `/contacts` | Create a contact |

@@ -121,6 +121,8 @@ Every endpoint in `v1`, derived from [`openapi.yaml`](./openapi.yaml):
 | GET | `/availability` | List open slots |
 | GET | `/services` | List services |
 | GET | `/services/{id}` | Retrieve a service |
+| GET | `/products` | List products |
+| GET | `/products/{id}` | Retrieve a product |
 | GET | `/locations` | List locations |
 | GET | `/contacts` | List contacts |
 | POST | `/contacts` | Create a contact |

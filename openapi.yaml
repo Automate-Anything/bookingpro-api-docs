@@ -217,6 +217,53 @@ paths:
         "404": { $ref: "#/components/responses/NotFound" }
         "422": { $ref: "#/components/responses/ValidationError" }
 
+  /products:
+    get:
+      operationId: listProducts
+      tags: [Catalog]
+      summary: List products
+      description: >
+        The products of each location's online store, scoped to the key's locations: only a
+        location whose online store is switched on, and only the products shoppers can see
+        there, with that location's price and the name shoppers see (the product's online
+        name when the business set one). Each location lists its own rows. The list is
+        complete in one response (not paginated). Orders are placed through the business's
+        own store checkout, not this API.
+      parameters:
+        - $ref: "#/components/parameters/LocationId"
+      responses:
+        "200":
+          description: The products.
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  data:
+                    type: array
+                    items: { $ref: "#/components/schemas/Product" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "503": { $ref: "#/components/responses/ServiceUnavailable" }
+
+  /products/{id}:
+    get:
+      operationId: getProduct
+      tags: [Catalog]
+      summary: Retrieve a product
+      description: The same object `GET /products` returns, from the first of the key's locations whose store sells it (or the `location_id` you pass). A product that list hides (store off, offline, deleted, not stocked at the location) is a `404`.
+      parameters:
+        - $ref: "#/components/parameters/PathId"
+        - $ref: "#/components/parameters/LocationId"
+      responses:
+        "200":
+          description: The product.
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Product" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "404": { $ref: "#/components/responses/NotFound" }
+        "503": { $ref: "#/components/responses/ServiceUnavailable" }
+
   /locations:
     get:
       operationId: listLocations
@@ -1349,6 +1396,22 @@ components:
         staff_needed: { type: integer, minimum: 1, maximum: 6, example: 1, description: "Staff members one booking of this service needs at the same time (a couples massage = 2). `GET /availability` only returns a time when that many staff members who do the service are free together (and, when the business uses rooms, a room has that many places). `POST /bookings` then books all of them: the returned booking is the customer's appointment, worked by `staff_needed` staff members, with the price split evenly between them." }
         price_cents: { type: integer, nullable: true, description: "This location's price in minor units (cents) of `currency`. Null when the price is set at checkout." }
         currency: { type: string, example: "USD", description: "Uppercase ISO 4217 code of the currency every `_cents` field on this object is in (minor units, 2 decimals). Each location has its own currency, so check it rather than assuming USD; a Mexican location is MXN." }
+
+    Product:
+      type: object
+      properties:
+        id: { type: string, format: uuid }
+        location_id: { type: string, format: uuid }
+        name: { type: string, description: "The name shoppers see: the product's online name when the business set one, else its product name." }
+        description: { type: string, nullable: true }
+        price_cents: { type: integer, description: "This location's price in minor units (cents) of `currency`." }
+        currency: { type: string, example: "USD", description: "Uppercase ISO 4217 code of the currency `price_cents` is in. Each location has its own currency." }
+        images: { type: array, items: { type: string, format: uri }, description: "Photo URLs, the first is the main one." }
+        brand: { type: string, nullable: true }
+        sku: { type: string, nullable: true }
+        category_ids: { type: array, items: { type: string, format: uuid } }
+        stock: { type: string, enum: [in_stock, low, sold_out], description: "`low` = 5 or fewer left. A product that does not track stock is always `in_stock`." }
+        quantity_available: { type: integer, nullable: true, description: "Units on hand at this location; null when the product does not track stock." }
 
     Contact:
       type: object
