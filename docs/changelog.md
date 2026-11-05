@@ -2,6 +2,12 @@
 
 API changes, additions, and deprecations.
 
+## 2026-11-05: Any Idempotency-Key works on POST /bookings
+
+- Fix: an `Idempotency-Key` that is not a UUID (for example `order-123`) made `POST /bookings`
+  answer `500`. Any string up to 255 characters now works, and a retry with the same key
+  still returns the original booking.
+
 ## 2026-11-02: Staff with Online booking off
 
 Additive; nothing changes for existing keys.
