@@ -1412,7 +1412,7 @@ components:
         sku: { type: string, nullable: true }
         category_ids: { type: array, items: { type: string, format: uuid } }
         stock: { type: string, enum: [in_stock, low, sold_out], description: "`low` = 5 or fewer left. A product that does not track stock is always `in_stock`." }
-        quantity_available: { type: integer, nullable: true, description: "Units on hand at this location; null when the product does not track stock." }
+        quantity_available: { type: integer, nullable: true, description: "Units in stock at this location, never below 0 (0 = sold out; the business's own count can be below 0 until it is recounted). null when the product does not track stock." }
 
     Contact:
       type: object
