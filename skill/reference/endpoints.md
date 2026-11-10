@@ -268,10 +268,11 @@ Success: `200`
 
 Scope: `read:giftcards`
 
-**List gift cards.** Gift cards issued at the key's locations (a location-limited key does not see cards of other locations, or cards that belong to no single location). Pass `location_id` to narrow to one of the key's locations.
+**List gift cards.** Gift cards issued at the key's locations (a location-limited key does not see cards of other locations, or cards that belong to no single location). Pass `location_id` to narrow to one of the key's locations, and `owner_contact_id` to list only the cards on one customer's account.
 
 Parameters:
 - `location_id` (query) - Restrict to a single location. Must be one the key can access.
+- `owner_contact_id` (query) - Only cards that belong to this customer (a contact id from `GET /contacts`).
 - `limit` (query)
 - `cursor` (query) - The `next_cursor` from a previous page.
 

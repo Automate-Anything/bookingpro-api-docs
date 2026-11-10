@@ -580,9 +580,15 @@ paths:
       description: >
         Gift cards issued at the key's locations (a location-limited key does not see
         cards of other locations, or cards that belong to no single location). Pass
-        `location_id` to narrow to one of the key's locations.
+        `location_id` to narrow to one of the key's locations, and `owner_contact_id`
+        to list only the cards on one customer's account.
       parameters:
         - $ref: "#/components/parameters/LocationId"
+        - name: owner_contact_id
+          in: query
+          required: false
+          description: Only cards that belong to this customer (a contact id from `GET /contacts`).
+          schema: { type: string, format: uuid }
         - $ref: "#/components/parameters/Limit"
         - $ref: "#/components/parameters/Cursor"
       responses:
@@ -1503,6 +1509,7 @@ components:
         created_at: { type: string, format: date-time }
         replaced_by_gift_card_id: { type: string, format: uuid, nullable: true, description: "Set when the business replaced this card (lost, damaged, or the customer needed a different card): its whole balance moved to the card with this id, so this card is `voided` at balance 0. The customer kept their money; it is on the new card." }
         replaces_gift_card_id: { type: string, format: uuid, nullable: true, description: "Set on a replacement card: the id of the card whose balance moved onto it. Nothing was sold." }
+        owner_contact_id: { type: string, format: uuid, nullable: true, description: "The customer the card belongs to (a contact id): it shows on their account and is offered at checkout. Null for a card nobody owns yet, such as a raffle prize not handed out. Separate from who bought it; the business can attach, change or remove it at any time without changing the balance." }
 
     Package:
       type: object
