@@ -1529,7 +1529,8 @@ components:
         name: { type: string }
         price_cents: { type: integer }
         currency: { type: string, example: "USD", description: "Uppercase ISO 4217 code of the currency every `_cents` field on this object is in (minor units, 2 decimals). Each location has its own currency, so check it rather than assuming USD; a Mexican location is MXN." }
-        billing_interval: { type: string, enum: [monthly, yearly] }
+        billing_interval: { type: string, enum: [week, month, year], description: "The unit the plan repeats on. Read it with `billing_interval_count`: week + 4 = every 4 weeks (13 charges a year)." }
+        billing_interval_count: { type: integer, minimum: 1, example: 1, description: "How many `billing_interval` units one billing period lasts (1 = every month, 4 with week = every 4 weeks)." }
 
     ContactMembership:
       type: object
