@@ -65,6 +65,8 @@ A request that needs a scope the key does not have returns `403 insufficient_sco
 | `write:classes` | Book, cancel and check in class spots |
 | `read:webhooks` | List webhook endpoints and their delivery log |
 | `write:webhooks` | Register and delete webhook endpoints, rotate their signing secret |
+| `read:reviews` | Read published reviews |
+| `read:loyalty` | Read reward points |
 <!-- generated:scopes:end -->
 
 ## Quickstart
@@ -138,6 +140,8 @@ Every endpoint in `v1`, derived from [`openapi.yaml`](./openapi.yaml):
 | GET | `/packages` | List package templates |
 | GET | `/memberships` | List membership plans |
 | GET | `/contacts/{id}/memberships` | List a contact's memberships |
+| GET | `/contacts/{id}/reward-points` | Retrieve a contact's reward points |
+| GET | `/reviews` | List published reviews |
 | POST | `/members/resolve` | Resolve a member (code, fob, or device) and check eligibility |
 | POST | `/members/check-in` | Check a member in (records a visit) |
 | GET | `/members/{id}/visits` | List a membership's check-ins |

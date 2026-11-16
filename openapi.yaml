@@ -42,6 +42,10 @@ tags:
     description: Resolve and check in members (kiosk, turnstile, biometric device).
   - name: Classes
     description: Group classes (gyms and studios). The timetable, rosters, booking, cancelling and checking in.
+  - name: Reviews
+    description: The business's own published customer reviews (star ratings, comments, the business's reply).
+  - name: Reward Points
+    description: A customer's reward points (loyalty) balance per location, and the points history.
   - name: Webhooks
     description: Outbound event subscriptions. Register an https URL and receive signed booking, payment and contact events.
 
@@ -695,6 +699,107 @@ paths:
         "401": { $ref: "#/components/responses/Unauthorized" }
         "404": { $ref: "#/components/responses/NotFound" }
 
+  /contacts/{id}/reward-points:
+    get:
+      operationId: getContactRewardPoints
+      tags: [Reward Points]
+      summary: Retrieve a contact's reward points
+      description: >
+        The contact's reward points balance at each of the key's locations (points are kept
+        per location), and whether the business runs the reward points program there. A
+        location with no points for this contact answers `balance: 0`. A location-limited
+        key sees only its own locations. Pass `include=history` to also get the latest 50
+        points changes (earned, spent, given back, adjusted), newest first. A contact that is
+        not in the key's company answers `404`.
+      parameters:
+        - $ref: "#/components/parameters/PathId"
+        - name: include
+          in: query
+          required: false
+          description: "`history` adds the latest 50 points changes at the key's locations."
+          schema: { type: string, enum: [history] }
+      responses:
+        "200":
+          description: The contact's reward points.
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/ContactRewardPoints" }
+              example:
+                contact_id: "8b0e6a1c-2f4d-4e7a-9c3b-5d1f0a2e7c44"
+                data:
+                  - location_id: "2c7d9e10-4b6a-4f2e-8a1d-0e5c3b7f9a21"
+                    program_enabled: true
+                    balance: 340
+                    last_activity_at: "2026-11-12T18:04:11Z"
+                history:
+                  - id: "f4a2c8e1-7b3d-4c9a-a1e6-2d5b8f0c3e77"
+                    location_id: "2c7d9e10-4b6a-4f2e-8a1d-0e5c3b7f9a21"
+                    delta: 40
+                    reason: earned
+                    occurred_at: "2026-11-12T18:04:11Z"
+                    order_id: "9e3b1f6a-0c2d-4a8e-b5f7-1d4c6a8e2b90"
+                    item: Haircut
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "403": { $ref: "#/components/responses/Forbidden" }
+        "404": { $ref: "#/components/responses/NotFound" }
+        "422": { $ref: "#/components/responses/ValidationError" }
+
+  /reviews:
+    get:
+      operationId: listReviews
+      tags: [Reviews]
+      summary: List published reviews
+      description: >
+        The business's own customer reviews that are published (the same reviews its
+        booking page shows), newest first. Private feedback and hidden reviews are never
+        returned. The reviewer is shown as first name and last initial ("Shev S."): no
+        contact id, full name, email or phone is ever sent. A location-limited key sees
+        only reviews of its own locations. Pass `location_id` to narrow to one of the key's
+        locations, and `technician_id` for the reviews of one staff member.
+      parameters:
+        - $ref: "#/components/parameters/LocationId"
+        - name: technician_id
+          in: query
+          required: false
+          description: Only reviews of this staff member.
+          schema: { type: string, format: uuid }
+        - $ref: "#/components/parameters/Limit"
+        - $ref: "#/components/parameters/Cursor"
+      responses:
+        "200":
+          description: A page of published reviews.
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  data:
+                    type: array
+                    items: { $ref: "#/components/schemas/Review" }
+                  next_cursor: { type: string, nullable: true }
+              example:
+                data:
+                  - id: "5a9c2e7f-1b4d-4f8a-9e3c-7d0b2a6f4e18"
+                    location_id: "2c7d9e10-4b6a-4f2e-8a1d-0e5c3b7f9a21"
+                    rating: 5
+                    punctuality: 5
+                    value: 4
+                    service: 5
+                    comment: Best cut I have had in years.
+                    staff_comment: Jane took her time and listened.
+                    technician_id: "3f1c2a9e-0b7d-4c55-9a1e-6d2f8b4c7a10"
+                    staff_name: Jane Smith
+                    reviewer: Shev S.
+                    is_verified: true
+                    reply: Thank you, see you next month!
+                    replied_at: "2026-11-10T14:22:00Z"
+                    reviewed_at: "2026-11-09T19:41:05Z"
+                    source: booking_pro
+                next_cursor: null
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "403": { $ref: "#/components/responses/Forbidden" }
+        "422": { $ref: "#/components/responses/ValidationError" }
+
   /members/resolve:
     post:
       operationId: resolveMember
@@ -1165,6 +1270,8 @@ components:
         "write:classes": "Book, cancel and check in class spots"
         "read:webhooks": "List webhook endpoints and their delivery log"
         "write:webhooks": "Register and delete webhook endpoints, rotate their signing secret"
+        "read:reviews": "Read published reviews"
+        "read:loyalty": "Read reward points"
 
   parameters:
     PathId:
@@ -1544,6 +1651,61 @@ components:
         current_period_end: { type: string, format: date-time, nullable: true }
         next_renewal_date: { type: string, format: date, nullable: true }
         member_code: { type: string, nullable: true, description: The scannable member code. }
+
+    Review:
+      type: object
+      properties:
+        id: { type: string, format: uuid }
+        location_id: { type: string, format: uuid }
+        rating: { type: integer, minimum: 1, maximum: 5, description: The overall star rating. }
+        punctuality: { type: integer, minimum: 1, maximum: 5, nullable: true, description: Star rating for punctuality, when the customer gave one. }
+        value: { type: integer, minimum: 1, maximum: 5, nullable: true, description: Star rating for value, when the customer gave one. }
+        service: { type: integer, minimum: 1, maximum: 5, nullable: true, description: Star rating for the service, when the customer gave one. }
+        comment: { type: string, nullable: true, description: What the customer wrote. }
+        staff_comment: { type: string, nullable: true, description: "What the customer wrote about the staff member. Null when there is none, or when it is the same text as `comment`." }
+        technician_id: { type: string, format: uuid, nullable: true, description: The staff member the review is about. }
+        staff_name: { type: string, nullable: true, description: "The staff member's current name, or the name the review was recorded with when that staff member is no longer on the team." }
+        reviewer: { type: string, nullable: true, example: "Shev S.", description: "The customer's first name (first letter capitalised) and last initial. Null when the review has no name." }
+        is_verified: { type: boolean, description: True when the review is tied to a real visit. }
+        reply: { type: string, nullable: true, description: "The business's public reply." }
+        replied_at: { type: string, format: date-time, nullable: true }
+        reviewed_at: { type: string, format: date-time }
+        source: { type: string, example: "booking_pro", description: "Where the review came from: `booking_pro` for a review left through the business's own review request, or the system it was imported from (for example `vagaro`)." }
+
+    ContactRewardPoints:
+      type: object
+      properties:
+        contact_id: { type: string, format: uuid }
+        data:
+          type: array
+          description: One entry per location of the key.
+          items: { $ref: "#/components/schemas/RewardPointsBalance" }
+        history:
+          type: array
+          description: "Only with `include=history`: the latest 50 points changes at the key's locations, newest first."
+          items: { $ref: "#/components/schemas/RewardPointsEntry" }
+
+    RewardPointsBalance:
+      type: object
+      properties:
+        location_id: { type: string, format: uuid }
+        program_enabled: { type: boolean, description: "True when the business runs the reward points program at this location. When it is off, customers neither earn nor spend points there; a balance they already have stays." }
+        balance: { type: integer, description: The customer's points at this location (0 when none). Points are kept per location. }
+        last_activity_at: { type: string, format: date-time, nullable: true, description: The time of the latest points change at this location. }
+
+    RewardPointsEntry:
+      type: object
+      properties:
+        id: { type: string, format: uuid }
+        location_id: { type: string, format: uuid }
+        delta: { type: integer, description: Points added (positive) or taken away (negative). }
+        reason:
+          type: string
+          enum: [earned, earn_reversal, redeemed, redeem_reversal, adjusted, imported, imported_history, review]
+          description: "`earned` = given for a paid sale; `earn_reversal` = taken back (refund, void or return); `redeemed` = spent on an item; `redeem_reversal` = spent points given back; `adjusted` = changed by the business; `imported` / `imported_history` = brought over from another system; `review` = given for leaving a review."
+        occurred_at: { type: string, format: date-time }
+        order_id: { type: string, format: uuid, nullable: true, description: The sale this change belongs to, when there is one. }
+        item: { type: string, nullable: true, description: The name of the item the points were for, when recorded. }
 
     MemberResolveResult:
       type: object

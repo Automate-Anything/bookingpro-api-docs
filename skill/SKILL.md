@@ -66,6 +66,8 @@ the account owner to mint a key with exactly the scopes your integration needs.
 | Members | `checkin:members (resolve/check-in), read:memberships (visit history)` |
 | Classes | `read:classes (read), write:classes (book/cancel/check-in)` |
 | Webhooks | `read:webhooks (read), write:webhooks (create/delete/rotate secret)` |
+| Reviews | `read:reviews` |
+| Reward Points | `read:loyalty` |
 
 ## Conventions
 
@@ -106,6 +108,8 @@ interactive playground at https://developers.bookingpro.ai.
 | GET | `/packages` | List package templates |
 | GET | `/memberships` | List membership plans |
 | GET | `/contacts/{id}/memberships` | List a contact's memberships |
+| GET | `/contacts/{id}/reward-points` | Retrieve a contact's reward points |
+| GET | `/reviews` | List published reviews |
 | POST | `/members/resolve` | Resolve a member (code, fob, or device) and check eligibility |
 | POST | `/members/check-in` | Check a member in (records a visit) |
 | GET | `/members/{id}/visits` | List a membership's check-ins |

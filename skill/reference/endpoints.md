@@ -21,6 +21,8 @@ Each key carries a set of scopes chosen when it was minted. A call that needs a 
 | Members | `checkin:members (resolve/check-in), read:memberships (visit history)` |
 | Classes | `read:classes (read), write:classes (book/cancel/check-in)` |
 | Webhooks | `read:webhooks (read), write:webhooks (create/delete/rotate secret)` |
+| Reviews | `read:reviews` |
+| Reward Points | `read:loyalty` |
 
 ---
 
@@ -325,6 +327,36 @@ Scope: `read:memberships`
 
 Parameters:
 - `id` (path) (required)
+
+Success: `200`
+
+---
+
+## GET /contacts/{id}/reward-points
+
+Scope: `read:loyalty`
+
+**Retrieve a contact's reward points.** The contact's reward points balance at each of the key's locations (points are kept per location), and whether the business runs the reward points program there. A location with no points for this contact answers `balance: 0`. A location-limited key sees only its own locations. Pass `include=history` to also get the latest 50 points changes (earned, spent, given back, adjusted), newest first. A contact that is not in the key's company answers `404`.
+
+Parameters:
+- `id` (path) (required)
+- `include` (query) - `history` adds the latest 50 points changes at the key's locations.
+
+Success: `200`
+
+---
+
+## GET /reviews
+
+Scope: `read:reviews`
+
+**List published reviews.** The business's own customer reviews that are published (the same reviews its booking page shows), newest first. Private feedback and hidden reviews are never returned. The reviewer is shown as first name and last initial ("Shev S."): no contact id, full name, email or phone is ever sent. A location-limited key sees only reviews of its own locations. Pass `location_id` to narrow to one of the key's locations, and `technician_id` for the reviews of one staff member.
+
+Parameters:
+- `location_id` (query) - Restrict to a single location. Must be one the key can access.
+- `technician_id` (query) - Only reviews of this staff member.
+- `limit` (query)
+- `cursor` (query) - The `next_cursor` from a previous page.
 
 Success: `200`
 
