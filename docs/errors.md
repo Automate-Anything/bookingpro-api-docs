@@ -43,6 +43,18 @@ so you can offer the customer another time right away (or re-fetch
 [availability](https://developers.bookingpro.ai/docs/api-reference/availability/getAvailability) for more). Do not
 blindly retry. A failed reschedule changes nothing: the original appointment stays.
 
+## Booking window and upcoming limit (`upcoming_limit_reached`)
+
+A business can limit how many upcoming appointments one client may hold at a location, and
+can give clients with a tag (for example VIP) a different limit and a longer booking window.
+`POST /bookings` for a client who already holds that many answers `422` with
+`code: upcoming_limit_reached` and a message that says how many (for example "You already
+have 3 upcoming appointments. To book another, change or cancel one first."). Offer to move
+or cancel one of their appointments instead of retrying. A date past the client's window is
+`422 booking_rule_violation`. Pass the client's `contact_id`, `phone` or `email` to
+[availability](https://developers.bookingpro.ai/docs/api-reference/availability/getAvailability) to see their own window
+and `booking_window.upcoming_limit_reached` before you book.
+
 ## Locations in different currencies (`currency_mismatch`)
 
 A business can run locations in different currencies (for example dollars in the US and

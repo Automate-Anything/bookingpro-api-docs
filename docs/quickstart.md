@@ -91,5 +91,10 @@ curl -X POST https://api.bookingpro.ai/api/v1/bookings \
 If someone takes the time in between, you get `409 slot_unavailable` with
 `error.alternatives`: up to 3 of the next open slots to offer instead.
 
+Some businesses approve online bookings before they are confirmed. There the booking
+comes back with `"approval_status": "pending"`: it holds the time, but it is a request
+the business still has to approve, and the customer hears from them once it is
+confirmed. Tell your user exactly that, never that it is booked.
+
 That is the whole loop. Explore every endpoint in the
 [API reference](https://developers.bookingpro.ai/docs/api-reference/general/ping), which has an interactive playground.

@@ -61,6 +61,20 @@ returns `409 class_full`; members can join the waitlist from the customer app.
 Signup cutoff, max per day and first-timers-only rules return `422 booking_rule`
 with a plain-language message. Send an `Idempotency-Key`.
 
+### Live stream and guests
+
+Send `"attendance_mode": "livestream"` to book a spot on the class's live stream
+instead of in the room. It has its own limit (`409 livestream_full`); a class without
+a live stream returns `422 booking_rule`.
+
+Send `"guests": { "count": 2, "names": ["Dana Levi", "Lee Park"] }` to book extra spots
+for friends together with the contact's own spot: all of them or none. When fewer spots
+are left than the party needs you get `409 not_enough_spots` (the message says how many
+are left). Names are optional. Guest spots appear on the roster with
+`"is_extra_spot": true`, the friend's `guest_name`, and the host as `contact_id`; the
+answer lists them in `guest_attendee_ids`. A live-stream spot is for one person, so
+guests with `livestream` return `400 livestream_no_guests`.
+
 ## Cancel a spot
 
 `POST /classes/{id}/cancel` with the `contact_id` releases the spot. Inside the

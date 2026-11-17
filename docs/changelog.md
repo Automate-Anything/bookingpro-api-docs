@@ -2,6 +2,60 @@
 
 API changes, additions, and deprecations.
 
+## 2026-11-17: Booking requests, online booking times, class guests and live stream
+
+Additive; nothing changes for a business that does not use these settings.
+
+- **Booking requests.** At a location that approves online bookings before they are
+  confirmed (for every booking, or only for chosen services), `POST /bookings` now
+  creates a request, exactly like the booking page: the booking comes back with
+  `approval_status: "pending"`, it holds the time, the business is asked to approve or
+  decline it, and the customer is sent nothing until it is approved. It then reads
+  `approved` (the customer gets the normal confirmation), or `declined` / `expired`
+  (cancelled). This applies to services that need several staff members too (one answer
+  covers the whole visit). Tell your user the business will confirm it. A new
+  `503 approval_policy_unavailable` means the setting could not be read; nothing was
+  booked. The AI receptionist (chat and phone) follows the same rule and tells the
+  customer the business will confirm.
+- **`approval_status` and `staff_requested` on bookings.** Both are on every booking
+  object (`GET /bookings`, `GET /bookings/{id}`, the create, cancel and reschedule
+  answers). `approval_status` is null for a booking that was never a request.
+  `staff_requested` is true when the customer picked the staff member by name (on the
+  API: you sent `technician_id`), false for "any available", null for bookings made in
+  the dashboard.
+- **Online booking times.** `GET /availability` applies the location's online booking
+  times (an interval between start times, and "minimize gaps") exactly as the booking
+  page does, so you never offer a time the booking page would not. `POST /bookings` and
+  `POST /bookings/{id}/reschedule` accept only those times (`409 slot_unavailable`
+  otherwise, with alternatives). Locations without these rules are unchanged.
+- **Classes.** `POST /classes/{id}/book` takes `attendance_mode` (`in_person`, the
+  default, or `livestream`) and `guests` (`{ "count": 2, "names": ["Dana", "Lee"] }`):
+  the friends' spots are booked with the contact's own, all or none. New refusals:
+  `409 livestream_full`, `409 not_enough_spots`, `400 livestream_no_guests`. The answer
+  adds `attendance_mode`, `guest_count` and `guest_attendee_ids`. The roster on
+  `GET /classes/{id}` documents `is_extra_spot` (a guest spot; `contact_id` is the host)
+  and `guest_name`.
+- **Gift cards.** `GET /gift-cards` and `GET /gift-cards/{id}` return `service_id`,
+  `service_name` and `service_quantity` for a card that is for a service rather than an
+  amount, and `redeemed_package_id` once it was redeemed into a prepaid package.
+- **Packages.** `GET /packages` returns `auto_renew_mode` (`off`, `when_used_up`,
+  `schedule`), `auto_renew_interval` (`week` / `month`) and `auto_renew_interval_count`.
+
+## 2026-11-16: Booking window per client and upcoming-appointment limit
+
+Additive; nothing changes for a business that does not turn these on.
+
+- A business can give clients with a tag (for example VIP) a longer booking window than its
+  standard Advance Booking, and can limit how many upcoming appointments one client may hold
+  at a location (standard and tagged clients can differ).
+- `GET /availability` takes optional `contact_id`, `phone` or `email`: the slots then follow
+  that client's own window, and the answer carries `booking_window` (`advance_days`,
+  `max_upcoming`, `upcoming_count`, `upcoming_limit_reached`). Without them the standard
+  window applies, exactly as before.
+- `POST /bookings` applies the same rules to the client it books. One appointment over the
+  limit returns `422 upcoming_limit_reached`; a date past the client's window is
+  `422 booking_rule_violation`, as before. Rescheduling never counts against the limit.
+
 ## 2026-11-05: Any Idempotency-Key works on POST /bookings
 
 - Fix: an `Idempotency-Key` that is not a UUID (for example `order-123`) made `POST /bookings`

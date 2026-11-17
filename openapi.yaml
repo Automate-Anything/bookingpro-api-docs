@@ -109,6 +109,14 @@ paths:
         the slots come from the rooms and `technician_id` is null.
 
 
+        The location's online booking times apply too, exactly as on the booking
+        page (Booking rules > Online booking times): when the business set an
+        interval between start times (for example every 45 minutes from opening),
+        only those starts are listed, and with "minimize gaps" on, a staff member
+        who already has bookings that day is offered only the times that leave no
+        gap (right when a booking ends, or ending right when the next one starts).
+
+
         Every `start` returned here is accepted by `POST /bookings` (unless someone
         books it first, which returns `409`).
 
@@ -118,6 +126,14 @@ paths:
         mode), so you can offer the earliest time without a second call. It is
         also set to the first slot when there are slots. Pass `limit` to return
         only the earliest slots (for example `limit=20` for a text conversation).
+
+
+        How far ahead a client may book can depend on the client: a business can
+        give clients with a tag (for example VIP) a longer window than its standard
+        Advance Booking, and can limit how many upcoming appointments one client may
+        hold. Pass `contact_id`, `phone` or `email` to get that client's own window
+        (and `booking_window` in the answer); without one, the standard window
+        applies. `POST /bookings` applies the same rules to the client it books.
       parameters:
         - name: location_id
           in: query
@@ -147,6 +163,21 @@ paths:
           required: false
           description: Return at most this many slots, earliest first (1-500). Omit for every slot in the range.
           schema: { type: integer, minimum: 1, maximum: 500 }
+        - name: contact_id
+          in: query
+          required: false
+          description: The client who is booking. Their own booking window applies (a tag rule can let them book further ahead than the standard window).
+          schema: { type: string, format: uuid }
+        - name: phone
+          in: query
+          required: false
+          description: The client's phone number, when you do not have a `contact_id`. Matched to the client on file; an unknown number gets the standard window.
+          schema: { type: string, example: "+18455550123" }
+        - name: email
+          in: query
+          required: false
+          description: The client's email, when you have neither `contact_id` nor `phone`.
+          schema: { type: string, format: email }
       responses:
         "200":
           description: Available slots.
@@ -166,6 +197,15 @@ paths:
                     description: The earliest open slot (the first of `slots`, or the first after the requested days when they have none). Null when nothing is open in the search window.
                     allOf:
                       - $ref: "#/components/schemas/Slot"
+                  booking_window:
+                    type: object
+                    nullable: true
+                    description: The client's own booking rules. Present when `contact_id`, `phone` or `email` was passed (null otherwise, or when they could not be read).
+                    properties:
+                      advance_days: { type: integer, example: 45, description: "How many days ahead this client may book (0 = no limit). Dates past it have no slots." }
+                      max_upcoming: { type: integer, nullable: true, example: 3, description: "Most upcoming appointments this client may hold at this location at once. Null = no limit." }
+                      upcoming_count: { type: integer, nullable: true, example: 3, description: "Their upcoming appointments at this location now (counted only when there is a limit). Null when the client is not on file." }
+                      upcoming_limit_reached: { type: boolean, description: "True when `POST /bookings` would refuse another appointment for this client with `422 upcoming_limit_reached`." }
         "401": { $ref: "#/components/responses/Unauthorized" }
         "403": { $ref: "#/components/responses/Forbidden" }
         "404":
@@ -460,12 +500,43 @@ paths:
         booking rule returns `422 booking_rule_violation`.
 
 
+        How far ahead is the CLIENT's own window: a business can give clients with a
+        tag (for example VIP) a longer window than its standard Advance Booking. A
+        business can also limit how many upcoming appointments one client may hold at
+        the location; booking one more returns `422 upcoming_limit_reached` (the
+        message says how many). Ask the client to change or cancel one of their
+        appointments instead. `GET /availability` with the same client shows their
+        window in advance.
+
+
         Without `technician_id`, at a location where every appointment needs a staff
         member, the first free staff member who performs the service (in the
         location's booking priority order) is assigned: the same person
         `GET /availability` named for that slot. At a location that books onto
         rooms, the appointment is booked onto a room with no staff member (the
-        service must have a room there, else `422 service_not_bookable`).
+        service must have a room there, else `422 service_not_bookable`). The start
+        must also sit on the location's online booking times (interval between start
+        times, minimize gaps), the same times `GET /availability` lists.
+
+
+        Booking requests: a location can approve online bookings before they are
+        confirmed (Booking rules > Approve online bookings, for every booking or only
+        for chosen services). There, a booking made through the API is a REQUEST,
+        exactly like one made on the booking page: it is created with
+        `approval_status: "pending"`, it holds the time, the business is notified to
+        approve or decline it, and the customer is sent nothing yet (no confirmation,
+        no reminders). When the business approves it, `approval_status` becomes
+        `approved` and the customer gets the normal confirmation; declined, or not
+        answered before its start time, it becomes `declined` / `expired` and is
+        cancelled. Tell your user it is a request the business will confirm, never
+        that it is booked. Read `GET /bookings/{id}` (or listen for the booking
+        webhooks) to follow it. At every other location `approval_status` is null and
+        nothing changes. `503 approval_policy_unavailable` = the setting could not be
+        read; nothing was booked, retry shortly.
+
+
+        `staff_requested` on the created booking is true when you named a
+        `technician_id`, false when the first free staff member was assigned.
       parameters:
         - $ref: "#/components/parameters/IdempotencyKey"
       requestBody:
@@ -983,6 +1054,15 @@ paths:
         membership or package, entitlement (422 `entitlement_required`) unless
         `allow_without_entitlement` is true (a staff-style booking the desk charges
         at checkout). Send an `Idempotency-Key`.
+
+
+        `attendance_mode: "livestream"` books a live-stream spot instead of an in-person
+        one (the class must have a live stream; it has its own limit, 409
+        `livestream_full`). `guests` books extra spots for friends in the same step as
+        the contact's own spot, all of them or none (409 `not_enough_spots` when fewer
+        spots are left than the party needs; the message says how many). Guest spots
+        show on the roster with `is_extra_spot: true` and the friend's `guest_name`.
+        A live-stream spot is for one person (400 `livestream_no_guests`).
       parameters:
         - $ref: "#/components/parameters/PathId"
         - $ref: "#/components/parameters/IdempotencyKey"
@@ -996,6 +1076,19 @@ paths:
               properties:
                 contact_id: { type: string, format: uuid }
                 allow_without_entitlement: { type: boolean, default: false, description: Book even when no membership or package covers the class (charge at checkout). }
+                attendance_mode: { type: string, enum: [in_person, livestream], default: in_person, description: In person (default) or on the class's live stream. }
+                guests:
+                  type: object
+                  description: Extra spots the contact holds for friends (in person only).
+                  required: [count]
+                  properties:
+                    count: { type: integer, minimum: 0, maximum: 20, description: How many friends. }
+                    names:
+                      type: array
+                      maxItems: 20
+                      items: { type: string, maxLength: 80 }
+                      description: Optional friends' names, in order (at most `count`). A missing name leaves that guest spot unnamed.
+                  example: { count: 2, names: ["Dana Levi", "Lee Park"] }
       responses:
         "201":
           description: The spot.
@@ -1005,13 +1098,18 @@ paths:
         "401": { $ref: "#/components/responses/Unauthorized" }
         "403": { $ref: "#/components/responses/Forbidden" }
         "404": { $ref: "#/components/responses/NotFound" }
+        "400":
+          description: "A field is invalid (`invalid_field`: `attendance_mode`, `guests.count`, `guests.names`) or guests were sent with a live-stream spot (`livestream_no_guests`)."
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Error" }
         "409":
-          description: The class is full (`class_full`). Members can join the waitlist from the customer app.
+          description: "The class is full (`class_full`), its live stream is full (`livestream_full`), or fewer spots are left than the contact plus their guests need (`not_enough_spots`). Members can join the waitlist from the customer app."
           content:
             application/json:
               schema: { $ref: "#/components/schemas/Error" }
         "422":
-          description: A class rule refused the booking (`booking_rule`, message says which) or nothing covers it (`entitlement_required`).
+          description: "A class rule refused the booking (`booking_rule`, the message says which: for example the class has no live stream, too many guests, signups closed) or nothing covers it (`entitlement_required`)."
           content:
             application/json:
               schema: { $ref: "#/components/schemas/Error" }
@@ -1409,11 +1507,19 @@ components:
         technician_name: { type: string, nullable: true, description: The trainer / instructor. }
         start: { type: string, format: date-time }
         end: { type: string, format: date-time }
-        capacity: { type: integer, nullable: true, description: Null = unlimited. }
-        booked: { type: integer, description: Spots held (booked or checked in). }
+        capacity: { type: integer, nullable: true, description: In-person spots. Null = unlimited. }
+        booked: { type: integer, description: In-person spots held (booked or checked in). }
         spots_left: { type: integer, nullable: true }
         waiting: { type: integer, description: People on the waitlist. }
         status: { type: string, enum: [scheduled, cancelled, completed] }
+        livestream:
+          type: object
+          nullable: true
+          description: The class can also be joined online (null = no live stream). The join link is never returned here; it goes only to the people booked on the live stream.
+          properties:
+            capacity: { type: integer, nullable: true, description: Live-stream spots. Null = unlimited. }
+            booked: { type: integer, description: Live-stream spots held. }
+            spots_left: { type: integer, nullable: true }
 
     ClassSessionDetail:
       allOf:
@@ -1434,6 +1540,9 @@ components:
                   checked_in_at: { type: string, format: date-time, nullable: true }
                   cancelled_at: { type: string, format: date-time, nullable: true }
                   guest_of_contact_id: { type: string, format: uuid, nullable: true }
+                  is_extra_spot: { type: boolean, description: "True for a guest spot: an extra spot the contact holds for a friend (booked with `guests` on `POST /classes/{id}/book`). `contact_id` is then the host, not the friend." }
+                  guest_name: { type: string, nullable: true, description: "The friend's name on a guest spot, when one was given. Null otherwise." }
+                  attendance_mode: { type: string, enum: [in_person, livestream], description: In person or on the live stream. }
             waitlist:
               type: array
               items:
@@ -1455,6 +1564,12 @@ components:
         paid_by: { type: string, nullable: true, enum: [membership, package, order, free_class, none] }
         spots_left: { type: integer, nullable: true }
         already_booked: { type: boolean, description: True when the contact already held this spot (no change made). }
+        attendance_mode: { type: string, enum: [in_person, livestream], description: The kind of spot booked. }
+        guest_count: { type: integer, description: How many guest spots were booked for friends with this spot (0 when none). }
+        guest_attendee_ids:
+          type: array
+          items: { type: string, format: uuid }
+          description: The roster ids of the guest spots (`is_extra_spot` on the class roster).
 
     Error:
       type: object
@@ -1589,6 +1704,8 @@ components:
         source: { type: string, example: api }
         created_at: { type: string, format: date-time }
         slug: { type: string, nullable: true, description: "The booking's short public reference (used in the customer's manage-booking link)." }
+        approval_status: { type: string, nullable: true, enum: [pending, approved, declined, expired], description: "Set when the booking was made online (the booking page, `POST /bookings`, or the AI receptionist) at a location that approves online bookings first. `pending` = a request still waiting: it holds the time, but the customer has not been told it is booked. `approved` = confirmed by the business; `declined` / `expired` = turned down or not answered before its start time (the booking is then cancelled). Null for every other booking." }
+        staff_requested: { type: boolean, nullable: true, description: "Booked online or through the API: true when the customer picked this staff member by name (on the API: a `technician_id` was sent), false for \"any available\". Null for bookings made any other way." }
 
     BookingCreate:
       type: object
@@ -1617,6 +1734,10 @@ components:
         replaced_by_gift_card_id: { type: string, format: uuid, nullable: true, description: "Set when the business replaced this card (lost, damaged, or the customer needed a different card): its whole balance moved to the card with this id, so this card is `voided` at balance 0. The customer kept their money; it is on the new card." }
         replaces_gift_card_id: { type: string, format: uuid, nullable: true, description: "Set on a replacement card: the id of the card whose balance moved onto it. Nothing was sold." }
         owner_contact_id: { type: string, format: uuid, nullable: true, description: "The customer the card belongs to (a contact id): it shows on their account and is offered at checkout. Null for a card nobody owns yet, such as a raffle prize not handed out. Separate from who bought it; the business can attach, change or remove it at any time without changing the balance." }
+        service_id: { type: string, format: uuid, nullable: true, description: "Set on a card FOR A SERVICE (for example 2 x Swedish massage) instead of an amount: the service it is for. Null for a money card." }
+        service_name: { type: string, nullable: true, description: The service's name on a service card, as it was sold. }
+        service_quantity: { type: integer, nullable: true, minimum: 1, description: "How many of the service the card gives. Null for a money card." }
+        redeemed_package_id: { type: string, format: uuid, nullable: true, description: "Set once a service card was redeemed: it became a prepaid visit package on the customer's account, and this is that package's id. Null while unredeemed and for money cards." }
 
     Package:
       type: object
@@ -1626,7 +1747,10 @@ components:
         name: { type: string }
         price_cents: { type: integer }
         currency: { type: string, example: "USD", description: "Uppercase ISO 4217 code of the currency every `_cents` field on this object is in (minor units, 2 decimals). Each location has its own currency, so check it rather than assuming USD; a Mexican location is MXN." }
-        total_sessions: { type: integer, nullable: true }
+        total_sessions: { type: integer, nullable: true, description: "Every session the package gives (paid and bonus), summed over its items. Null when the package has no items." }
+        auto_renew_mode: { type: string, enum: ["off", when_used_up, schedule], description: "How the package renews by itself: `off`; `when_used_up` = the next package is sold (and charged to the card on file) when every paid session is used; `schedule` = every `auto_renew_interval_count` x `auto_renew_interval`." }
+        auto_renew_interval: { type: string, nullable: true, enum: [week, month], description: "With `schedule`: the unit of the renewal period. Null otherwise." }
+        auto_renew_interval_count: { type: integer, nullable: true, minimum: 1, maximum: 52, description: "With `schedule`: how many units between renewals (2 + week = every two weeks). Null otherwise." }
 
     MembershipPlan:
       type: object

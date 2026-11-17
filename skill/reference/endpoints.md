@@ -44,9 +44,13 @@ Scope: `read:availability`
 
 Without `technician_id`: at a location where every appointment needs a staff member, this is "any available": a time is listed when ANY staff member who performs the service is free, and the slot's `technician_id` is the staff member `POST /bookings` assigns when you book that start without naming one (the first free one in the location's booking priority order). At most 7 days per request in this mode. At a location that books appointments onto rooms, the slots come from the rooms and `technician_id` is null.
 
+The location's online booking times apply too, exactly as on the booking page (Booking rules > Online booking times): when the business set an interval between start times (for example every 45 minutes from opening), only those starts are listed, and with "minimize gaps" on, a staff member who already has bookings that day is offered only the times that leave no gap (right when a booking ends, or ending right when the next one starts).
+
 Every `start` returned here is accepted by `POST /bookings` (unless someone books it first, which returns `409`).
 
 When the requested days have no open time, `next_available` is the first open slot after them (searched up to 60 days ahead, 28 in any-available mode), so you can offer the earliest time without a second call. It is also set to the first slot when there are slots. Pass `limit` to return only the earliest slots (for example `limit=20` for a text conversation).
+
+How far ahead a client may book can depend on the client: a business can give clients with a tag (for example VIP) a longer window than its standard Advance Booking, and can limit how many upcoming appointments one client may hold. Pass `contact_id`, `phone` or `email` to get that client's own window (and `booking_window` in the answer); without one, the standard window applies. `POST /bookings` applies the same rules to the client it books.
 
 Parameters:
 - `location_id` (query) (required)
@@ -55,6 +59,9 @@ Parameters:
 - `days` (query) - Number of days from `date` to include (1-31). Defaults to 1.
 - `technician_id` (query) - Restrict to a specific staff member. Must be someone who performs the service at the location (otherwise `404 technician_not_found`).
 - `limit` (query) - Return at most this many slots, earliest first (1-500). Omit for every slot in the range.
+- `contact_id` (query) - The client who is booking. Their own booking window applies (a tag rule can let them book further ahead than the standard window).
+- `phone` (query) - The client's phone number, when you do not have a `contact_id`. Matched to the client on file; an unknown number gets the standard window.
+- `email` (query) - The client's email, when you have neither `contact_id` nor `phone`.
 
 Success: `200`
 
@@ -208,7 +215,13 @@ Scope: `read:bookings (read), write:bookings (create/cancel/reschedule)`
 
 **Create a booking.** Books an appointment. The start is re-checked exactly the way the public booking page re-checks it: the staff member's working hours, the location's hours, existing bookings, classes, rooms, and the location's booking rules (same day, how far ahead, minimum notice). The visit is sized for the staff member doing it (their own duration, waiting period and cleanup time for the service). A taken or closed time returns `409 slot_unavailable`; a broken booking rule returns `422 booking_rule_violation`.
 
-Without `technician_id`, at a location where every appointment needs a staff member, the first free staff member who performs the service (in the location's booking priority order) is assigned: the same person `GET /availability` named for that slot. At a location that books onto rooms, the appointment is booked onto a room with no staff member (the service must have a room there, else `422 service_not_bookable`).
+How far ahead is the CLIENT's own window: a business can give clients with a tag (for example VIP) a longer window than its standard Advance Booking. A business can also limit how many upcoming appointments one client may hold at the location; booking one more returns `422 upcoming_limit_reached` (the message says how many). Ask the client to change or cancel one of their appointments instead. `GET /availability` with the same client shows their window in advance.
+
+Without `technician_id`, at a location where every appointment needs a staff member, the first free staff member who performs the service (in the location's booking priority order) is assigned: the same person `GET /availability` named for that slot. At a location that books onto rooms, the appointment is booked onto a room with no staff member (the service must have a room there, else `422 service_not_bookable`). The start must also sit on the location's online booking times (interval between start times, minimize gaps), the same times `GET /availability` lists.
+
+Booking requests: a location can approve online bookings before they are confirmed (Booking rules > Approve online bookings, for every booking or only for chosen services). There, a booking made through the API is a REQUEST, exactly like one made on the booking page: it is created with `approval_status: "pending"`, it holds the time, the business is notified to approve or decline it, and the customer is sent nothing yet (no confirmation, no reminders). When the business approves it, `approval_status` becomes `approved` and the customer gets the normal confirmation; declined, or not answered before its start time, it becomes `declined` / `expired` and is cancelled. Tell your user it is a request the business will confirm, never that it is booked. Read `GET /bookings/{id}` (or listen for the booking webhooks) to follow it. At every other location `approval_status` is null and nothing changes. `503 approval_policy_unavailable` = the setting could not be read; nothing was booked, retry shortly.
+
+`staff_requested` on the created booking is true when you named a `technician_id`, false when the first free staff member was assigned.
 
 Parameters:
 - `Idempotency-Key` (header) - A unique key you generate per logical create. Retrying with the same key returns the original result instead of creating a duplicate.
@@ -447,6 +460,8 @@ Scope: `read:classes (read), write:classes (book/cancel/check-in)`
 
 **Book a contact into a class.** Reserves a spot on the roster. Nothing is charged: the spot records what will cover it at check-in (`membership`, `package`, `free_class`) or `none`. The class rules apply: capacity (409 `class_full`), signup cutoff / max per day / first-timers only (422 `booking_rule`), and, when the service requires a membership or package, entitlement (422 `entitlement_required`) unless `allow_without_entitlement` is true (a staff-style booking the desk charges at checkout). Send an `Idempotency-Key`.
 
+`attendance_mode: "livestream"` books a live-stream spot instead of an in-person one (the class must have a live stream; it has its own limit, 409 `livestream_full`). `guests` books extra spots for friends in the same step as the contact's own spot, all of them or none (409 `not_enough_spots` when fewer spots are left than the party needs; the message says how many). Guest spots show on the roster with `is_extra_spot: true` and the friend's `guest_name`. A live-stream spot is for one person (400 `livestream_no_guests`).
+
 Parameters:
 - `id` (path) (required)
 - `Idempotency-Key` (header) - A unique key you generate per logical create. Retrying with the same key returns the original result instead of creating a duplicate.
@@ -455,6 +470,8 @@ Parameters:
 Request body:
   - `contact_id`: string (required)
   - `allow_without_entitlement`: boolean - Book even when no membership or package covers the class (charge at checkout).
+  - `attendance_mode`: string - In person (default) or on the class's live stream.
+  - `guests`: object - Extra spots the contact holds for friends (in person only).
 
 Success: `201`
 
