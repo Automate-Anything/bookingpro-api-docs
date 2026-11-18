@@ -519,6 +519,10 @@ paths:
         times, minimize gaps), the same times `GET /availability` lists.
 
 
+        A customer with Can't book online on (`online_booking_blocked` on the contact)
+        is refused with `400 contact_blocked_online`: the business books them itself.
+
+
         Booking requests: a location can approve online bookings before they are
         confirmed (Booking rules > Approve online bookings, for every booking or only
         for chosen services). There, a booking made through the API is a REQUEST,
@@ -1651,6 +1655,7 @@ components:
         phone: { type: string, nullable: true, description: E.164. }
         email: { type: string, nullable: true }
         created_at: { type: string, format: date-time }
+        online_booking_blocked: { type: boolean, description: "Can't book online. When true the customer cannot book themselves (booking page, customer portal, AI assistant, or POST /bookings, which answers 400 contact_blocked_online); the business's team can still book them." }
 
     ContactCreate:
       type: object
@@ -1668,6 +1673,7 @@ components:
         last_name: { type: string }
         phone: { type: string }
         email: { type: string }
+        online_booking_blocked: { type: boolean, description: "Turn Can't book online on (true) or off (false) for this customer." }
 
     Booking:
       type: object
