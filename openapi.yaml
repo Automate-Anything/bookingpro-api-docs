@@ -1849,7 +1849,7 @@ components:
           type: string
           description: >
             `eligible`, or why not: `memberships_not_enabled_at_location`, `membership_not_found`,
-            `membership_not_active`, `plan_not_found`, `plan_not_facility_access`, `blackout_period`,
+            `membership_not_active`, `plan_not_found`, `plan_not_facility_access`, `plan_is_add_on` (a locker rental or other add-on, never a check-in), `blackout_period`,
             `location_not_covered`, `home_location_only`, `contact_not_a_member`, `checkin_blocked`
             (see `block_reasons`), `no_credits_remaining`, `currency_mismatch` (the membership is in
             another currency than this location; see `message`), or `no_member_for_identifier`.
